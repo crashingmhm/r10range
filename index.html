@@ -1,0 +1,2428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1a2e">
+<style>body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>R10 Range</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D range, HUD floats over it — top bar, stat card right, shot strip bottom (stacks on phones). Single dusk-floodlight look. */
+:root {
+  color-scheme: dark;
+  --sky: #0f1a2e;
+  --glass: rgba(14, 22, 36, 0.72);
+  --glass-strong: rgba(10, 16, 28, 0.88);
+  --line: rgba(196, 214, 240, 0.16);
+  --ink: #eef3fa;
+  --ink-dim: #9fb0c8;
+  --tracer: #ffb347;
+  --turf: #7fd18b;
+  --warn: #ff8a7a;
+  --good: #5fd38a;
+  --ok: #f2c94c;
+  --bad: #ff6b5e;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  background: var(--sky);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.hud {
+  position: fixed; inset: 0; pointer-events: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding-block: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.hud > * { pointer-events: auto; }
+.panel {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* top bar */
+.topbar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: flex-end; }
+.brand { display: flex; align-items: baseline; gap: 10px; padding: 8px 14px; min-width: 0; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; }
+.brand h1 span { color: var(--tracer); }
+.brand .src { font-size: 12px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand .src.sample { color: var(--tracer); }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+button, .btn {
+  font: 600 13px/1 var(--font-body);
+  color: var(--ink);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover, .btn:hover { border-color: rgba(255, 179, 71, 0.6); }
+button:focus-visible, .btn:focus-within, .chip:focus-visible { outline: 2px solid var(--tracer); outline-offset: 2px; }
+button.primary { background: var(--tracer); color: #1d1206; border-color: transparent; }
+button[aria-pressed="true"] { background: rgba(255, 179, 71, 0.18); border-color: rgba(255, 179, 71, 0.7); }
+.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.seg { display: inline-flex; }
+.dd { position: relative; flex: 0 0 auto; }
+.dd-btn .dd-chev { opacity: 0.7; transition: transform 0.2s; }
+.dd-btn[aria-expanded="true"] { border-color: rgba(255, 179, 71, 0.7); }
+.dd-btn[aria-expanded="true"] .dd-chev { transform: rotate(180deg); }
+.dd-btn .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dd-menu { position: absolute; left: 0; bottom: calc(100% + 8px); min-width: 190px; max-height: 60vh; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; background: var(--glass-strong); z-index: 15; }
+.dd-menu.right { left: auto; right: 0; }
+.dd-menu button { width: 100%; justify-content: flex-start; border: 1px solid transparent; background: transparent; backdrop-filter: none; padding: 9px 10px; flex-wrap: wrap; text-align: left; }
+.dd-menu button:hover { background: rgba(255, 255, 255, 0.06); border-color: transparent; }
+.dd-menu button[aria-pressed="true"] { background: rgba(255, 179, 71, 0.16); color: var(--tracer); }
+.dd-menu button small { flex-basis: 100%; font-size: 11px; font-weight: 500; color: var(--ink-dim); }
+.dd-menu .filter .avg { margin-left: auto; }
+.seg button { border-radius: 0; }
+.seg button:first-child { border-radius: 8px 0 0 8px; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button + button { border-left: none; }
+
+/* stat card */
+.card { grid-column: 2; grid-row: 1; align-self: stretch; width: var(--card-w, 300px); max-width: calc(100vw - 32px); max-height: 100%; display: flex; position: relative; overflow: hidden; container-type: inline-size; }
+.card-body { flex: 1; min-width: 0; padding: 16px 16px 16px 22px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.grip {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 14px; cursor: ew-resize; touch-action: none; z-index: 2;
+  display: grid; place-items: center; background: transparent; border: none; border-radius: 10px 0 0 10px; padding: 0; backdrop-filter: none;
+}
+.grip::before { content: ""; width: 4px; height: 44px; border-radius: 2px; background: var(--ink-dim); opacity: 0.45; transition: opacity 0.15s, background 0.15s; }
+.grip:hover::before, .grip:focus-visible::before, .card.resizing .grip::before { opacity: 1; background: var(--tracer); }
+.card.resizing { user-select: none; }
+@container (min-width: 420px) {
+  .stats { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)) !important; }
+  .card-foot .toggle-more { display: none !important; }
+  .more { display: flex !important; }
+  .group-label.more { display: block !important; }
+}
+@container (min-width: 560px) {
+  .hero .big { font-size: 84px !important; }
+  .hero .big small { font-size: 28px; }
+  .stat dd { font-size: 26px !important; }
+  .stat dt { font-size: 12px !important; }
+  .club-name { font-size: 24px; }
+}
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.club-name { font-family: var(--font-display); font-weight: 600; font-size: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
+.shot-no { font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.hero .label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.hero .big { font-family: var(--font-display); font-weight: 700; font-size: 64px; line-height: 0.9; font-variant-numeric: tabular-nums; }
+.hero .big small { font-size: 22px; font-weight: 600; color: var(--ink-dim); margin-left: 4px; }
+.shape { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); color: var(--ink); white-space: nowrap; backdrop-filter: none; border: 1px solid transparent; }
+.shape::after { content: "▾"; font-size: 10px; opacity: 0.7; margin-left: 2px; }
+.shape[aria-expanded="true"]::after { content: "▴"; }
+.shape.good { color: var(--good); background: rgba(95, 211, 138, 0.14); }
+.shape.ok { color: var(--ok); background: rgba(242, 201, 76, 0.14); }
+.shape.bad { color: var(--bad); background: rgba(255, 107, 94, 0.14); }
+.shape-grid { display: flex; flex-direction: column; gap: 8px; }
+.shape-row { display: flex; flex-direction: column; gap: 4px; }
+.shape-row > span { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+.shape-row div { display: flex; flex-wrap: wrap; gap: 4px; }
+.pill { font-size: 11px; font-weight: 600; padding: 3px 7px; border-radius: 999px; border: 1px solid transparent; }
+.pill.good { color: var(--good); background: rgba(95, 211, 138, 0.1); }
+.pill.ok { color: var(--ok); background: rgba(242, 201, 76, 0.1); }
+.pill.bad { color: var(--bad); background: rgba(255, 107, 94, 0.1); }
+.pill.now { border-color: currentColor; box-shadow: 0 0 0 1px currentColor inset; }
+.smash-ref .seg button { padding: 6px 10px; font-size: 12px; backdrop-filter: none; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 0; }
+.stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; }
+.stat dt { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); white-space: nowrap; }
+.stat dd { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat dd small { font-size: 13px; color: var(--ink-dim); font-weight: 500; margin-left: 2px; }
+.stat.est dd::after { content: " est."; font-family: var(--font-body); font-size: 10px; color: var(--ink-dim); }
+.smash-dd { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.grade { font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 999px; display: inline-flex; align-items: center; gap: 4px; }
+.grade::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.grade.good { color: var(--good); background: rgba(95, 211, 138, 0.14); }
+.grade.ok { color: var(--ok); background: rgba(242, 201, 76, 0.14); }
+.grade.bad { color: var(--bad); background: rgba(255, 107, 94, 0.14); }
+.grade.check { color: var(--ink-dim); background: rgba(255, 255, 255, 0.08); }
+/* ratings show as a coloured dot only; the word stays for screen readers */
+.grade { font-size: 0 !important; padding: 0 !important; background: none !important; gap: 0; vertical-align: middle; }
+.grade::before { width: 10px; height: 10px; }
+.info-dot { width: 18px; height: 18px; padding: 0; border-radius: 50%; justify-content: center; font: 700 11px/1 var(--font-body); color: var(--ink-dim); background: rgba(255, 255, 255, 0.06); backdrop-filter: none; vertical-align: middle; margin-left: 4px; }
+.info-dot[aria-expanded="true"] { color: #1d1206; background: var(--tracer); border-color: transparent; }
+.stat dt { display: flex; align-items: center; }
+.smash-ref { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.smash-ref h3 { margin: 0; font: 600 11px/1.2 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tracer); }
+.smash-ref table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.smash-ref th, .smash-ref td { padding: 5px 4px; text-align: left; border-bottom: 1px solid var(--line); }
+.smash-ref th { font-weight: 500; color: var(--ink-dim); font-size: 11px; }
+.smash-ref td:first-child { color: var(--ink); font-weight: 600; }
+.smash-ref tr.mine td:first-child { color: var(--tracer); }
+.smash-ref .g { color: var(--good); } .smash-ref .o { color: var(--ok); } .smash-ref .b { color: var(--bad); }
+.smash-ref p { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; }
+.chip .sm { width: 100%; height: 3px; border-radius: 2px; margin-top: 2px; background: transparent; }
+.chip .sm.good { background: var(--good); } .chip .sm.ok { background: var(--ok); } .chip .sm.bad { background: var(--bad); }
+.group-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tracer); margin: 2px 0 -4px; }
+.toggle-more { display: none; }
+.icon-btn { padding: 9px 11px; }
+.collapse-btn { width: 26px; height: 26px; padding: 0; justify-content: center; flex: 0 0 auto; backdrop-filter: none; background: rgba(255,255,255,0.06); }
+.collapse-btn svg, .impact-head .chev { transition: transform 0.2s; }
+.card-head { align-items: center; }
+.card-head .shot-no { margin-left: auto; }
+.mini { display: none; font-family: var(--font-display); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mini small { color: var(--ink-dim); font-size: 12px; font-weight: 500; margin-left: 2px; }
+.card.collapsed .card-body > :not(.card-head) { display: none !important; }
+.card.collapsed .mini { display: inline; }
+.card.collapsed .shot-no, .card.collapsed .grip { display: none; }
+.card.collapsed .card-body { padding: 10px 12px; }
+.card.collapsed .collapse-btn svg { transform: rotate(180deg); }
+.card.collapsed { height: auto !important; min-height: 0 !important; align-self: start; }
+.hud.docked .card { align-self: start; }
+
+/* stats-only page */
+body.stats-mode #stage, body.stats-mode .impact, body.stats-mode .card, body.stats-mode .hint { display: none !important; }
+body.stats-mode { background: #0d1524; }
+.statpage { grid-column: 1 / -1; grid-row: 1; align-self: stretch; min-height: 0; overflow-y: auto; padding: 18px 20px 22px; background: var(--glass-strong); display: flex; flex-direction: column; gap: 18px; }
+.sp-layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.sp-impact { border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.025); container-type: inline-size; position: sticky; top: 0; }
+.sp-impact .impact-body { padding: 0 14px 14px !important; }
+.sp-impact.collapsed .impact-body { display: none; }
+.sp-impact.collapsed .chev { transform: rotate(180deg); }
+#sp-body { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+@media (max-width: 900px) { .sp-layout { grid-template-columns: minmax(0, 1fr); } .sp-impact { position: static; } }
+.sp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sp-head .club-name { font-size: 26px; }
+.sp-head .shape::after { content: none; }
+.sp-head .shot-no { margin-left: auto; }
+.sp-group h3 { margin: 0 0 4px; font: 600 11px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--tracer); }
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 24px; }
+.sp-cell { border-top: 1px solid var(--line); padding: 10px 0 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sp-cell.r-good { border-top: 2px solid var(--good); } .sp-cell.r-ok { border-top: 2px solid var(--ok); } .sp-cell.r-bad { border-top: 2px solid var(--bad); }
+.sp-cell .k { font-size: 13px; color: var(--ink-dim); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-cell .k i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.sp-cell.r-good .k i { background: var(--good); } .sp-cell.r-ok .k i { background: var(--ok); } .sp-cell.r-bad .k i { background: var(--bad); }
+.sp-cell .v { font-family: var(--font-display); font-weight: 700; font-size: 46px; line-height: 1; font-variant-numeric: tabular-nums; }
+.sp-cell.est .k::after { content: "est."; font-size: 10px; margin-left: 2px; }
+@media (max-width: 760px) {
+  .statpage { grid-row: 1 / 3; padding: 14px 14px 18px; }
+  .sp-grid { grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .sp-cell .v { font-size: 36px; }
+}
+
+/* docked layout: panels would touch, so Impact runs across the bottom */
+.hud.docked { grid-template-rows: minmax(0, 1fr) auto auto; }
+.hud.docked .impact { grid-column: 1 / -1; grid-row: 2; align-self: stretch; width: auto; justify-self: stretch; height: var(--dock-imp-h, auto); max-height: var(--dock-imp-h, 42vh); min-height: 60px; }
+.hud.docked .bottom { grid-row: 3; }
+.hud.docked .impact .grip { display: none; }
+.hud.docked .card { grid-column: 1 / -1; width: auto; max-width: none; justify-self: stretch; height: var(--dock-card-h, auto); max-height: min(var(--dock-card-h, 36vh), 100%); min-height: 60px; }
+.vgrip { display: none; position: absolute; left: 0; right: 0; height: 14px; cursor: ns-resize; touch-action: none; z-index: 2; place-items: center; padding: 0; border: none; border-radius: 0; background: transparent; backdrop-filter: none; }
+.vgrip::before { content: ""; width: 44px; height: 4px; border-radius: 2px; background: var(--ink-dim); opacity: 0.45; transition: opacity 0.15s, background 0.15s; }
+.vgrip:hover::before, .vgrip:focus-visible::before, .vgrip.dragging::before { opacity: 1; background: var(--tracer); }
+.hud.docked .vgrip { display: grid; }
+/* minimised Impact in the horizontal layout: a small tab at the bottom left */
+/* container-type gives the box no width of its own, so turn it off while it's just a tab */
+.hud.docked .impact.collapsed { justify-self: start; align-self: end; width: max-content; container-type: normal; height: auto; min-height: 0; max-height: none; }
+.hud.docked .impact.collapsed .impact-head { width: auto; }
+.hud.docked .impact.collapsed .chev { transform: none; }
+/* minimised stats: a small tab at the top right (both layouts) */
+.card.collapsed { justify-self: end; width: max-content !important; max-width: calc(100vw - 32px); container-type: normal; }
+.hud.docked .card.collapsed { width: max-content !important; justify-self: end; }
+.card.collapsed .card-head { gap: 10px; }
+.hud.docked .card.collapsed .card-body { padding-bottom: 10px; }
+.hud.docked .impact.collapsed .impact-head { padding: 10px 14px; border-radius: 10px; }
+.hud.docked .impact.collapsed .impact-head .chev { margin-left: 8px; }
+.hud.docked .impact.collapsed .undock-btn { display: none; }
+.hud.docked .collapsed .vgrip { display: none; }
+#card-vgrip { bottom: 0; }
+#impact-vgrip { top: 0; }
+.hud.docked .card .card-body { padding-bottom: 20px; }
+.hud.docked .impact-head { padding-top: 14px; }
+.hud.docked .card > .grip { display: none; }
+.hud.docked .card-body { padding-left: 16px; }
+/* horizontal layout: carry on the left, every stat in an even grid across the rest of the width */
+.hud.docked .card:not(.collapsed) .card-body { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-auto-rows: auto; align-items: start; column-gap: 28px; row-gap: 12px; }
+.hud.docked .card:not(.collapsed) .card-body > * { grid-column: 1 / -1; }
+.hud.docked .card:not(.collapsed) .card-body > .hero { grid-column: 1; grid-row: 2; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 10px; }
+.hud.docked .card:not(.collapsed) .card-body > .stats { grid-column: 2; grid-row: 2; align-self: stretch; align-content: space-evenly; grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }
+.hud.docked .card .stats > .group-label { display: none !important; }
+@container (max-width: 1050px) { .hud.docked .card:not(.collapsed) .card-body > .stats { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; } }
+.hud.docked .impact-body { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.9fr); gap: 0 18px; overflow: auto; }
+.hud.docked .isec { border-top: none; border-left: 1px solid var(--line); padding: 0 0 0 16px; }
+.hud.docked .isec:first-child { border-left: none; padding-left: 0; }
+.hud.docked .isec:last-child .ivals.three { grid-template-columns: 1fr; gap: 10px; }
+.hud.docked .idiag { max-height: 17vh; }
+/* horizontal layout: centre everything in each Impact section */
+.hud.docked .impact .isec { align-items: center; text-align: center; justify-content: center; }
+.hud.docked .impact .ivals { width: 100%; justify-items: center; }
+.hud.docked .impact .ival, .hud.docked .impact .ival.right { align-items: center; text-align: center; }
+.hud.docked .impact .ival .k, .hud.docked .impact .ival .v { justify-content: center; }
+.hud.docked .impact .isec h4 { align-self: center; }
+.hud.docked .impact .idiag { margin-inline: auto; }
+.hud.docked .impact .isec:first-child .ivals { grid-template-columns: 1fr; gap: 6px; }
+.hud.docked .ival .v { font-size: 24px !important; }
+.hud.docked .ival .k { font-size: 11px !important; }
+.hud.docked .impact-title { font-size: 18px !important; }
+.undock-btn { position: absolute; top: 8px; right: 44px; z-index: 3; padding: 5px 9px; font-size: 11px; backdrop-filter: none; background: rgba(255,255,255,0.06); }
+
+/* live R10 */
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim); flex: 0 0 auto; }
+.live-dot.ok { background: var(--good); box-shadow: 0 0 0 3px rgba(95, 211, 138, 0.25); }
+.live-dot.busy { background: var(--ok); animation: livePulse 1s ease-in-out infinite; }
+.live-dot.bad { background: var(--bad); }
+@keyframes livePulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .live-dot.busy { animation: none; } }
+.live-menu { width: min(340px, calc(100vw - 32px)); padding: 14px; gap: 10px; }
+.live-menu h3 { margin: 0; font: 600 11px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tracer); }
+.live-status { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.live-status #live-batt { margin-left: auto; font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.live-err { margin: 0; font-size: 12px; color: var(--bad); line-height: 1.45; }
+.live-nobt p, .live-note { margin: 0; font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
+.live-nobt b { color: var(--ink); }
+.live-url { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.live-url code { flex: 1; min-width: 0; font-size: 11px; color: var(--ink); background: rgba(255,255,255,0.06); padding: 6px 8px; border-radius: 6px; overflow-wrap: anywhere; user-select: all; }
+.live-steps { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink-dim); line-height: 1.55; display: flex; flex-direction: column; gap: 2px; }
+.live-steps b { color: var(--ink); }
+.live-actions { display: flex; gap: 6px; }
+.live-menu .live-actions button, .live-menu .live-url button, .live-logbox button { width: auto; justify-content: center; flex-wrap: nowrap; background: var(--glass); border: 1px solid var(--line); }
+.live-menu .live-actions button.primary { background: var(--tracer); color: #1d1206; border-color: transparent; }
+.live-logbox summary { cursor: pointer; font-size: 12px; color: var(--ink-dim); }
+.live-logbox pre { margin: 6px 0; max-height: 170px; overflow: auto; font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
+
+/* club picker */
+.rtools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; justify-content: flex-end; }
+.clubpick { position: relative; flex: 0 0 auto; }
+.club-btn { width: 48px; height: 48px; padding: 0; justify-content: center; border-radius: 50%; border: 2px solid var(--tracer); font: 700 17px/1 var(--font-display); letter-spacing: 0.02em; }
+.club-btn[aria-expanded="true"] { background: var(--tracer); color: #1d1206; }
+.club-menu { position: absolute; right: 0; bottom: calc(100% + 10px); width: min(300px, calc(100vw - 32px)); padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--glass-strong); z-index: 15; }
+.club-menu h3 { margin: 0; font: 600 11px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tracer); }
+.club-menu p { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; }
+.cg { display: flex; flex-direction: column; gap: 5px; }
+.cg span { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+.cg div { display: flex; flex-wrap: wrap; gap: 5px; }
+.cg button { padding: 7px 0; width: 46px; justify-content: center; font: 600 14px/1 var(--font-display); backdrop-filter: none; }
+.cg button[aria-pressed="true"] { background: var(--tracer); color: #1d1206; border-color: transparent; }
+.cg button .n { font-size: 9px; color: inherit; opacity: 0.7; margin-left: 2px; }
+.club-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.club-actions button { font-size: 12px; padding: 7px 10px; backdrop-filter: none; }
+.empty-note { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--ink-dim); line-height: 1.5; }
+
+/* impact panel */
+.impact { grid-column: 1; grid-row: 1; justify-self: start; align-self: stretch; width: var(--imp-w, 300px); max-width: 100%; max-height: 100%; display: flex; flex-direction: column; overflow: hidden; position: relative; container-type: inline-size; }
+.impact .grip { left: auto; right: 0; border-radius: 0 10px 10px 0; }
+.impact.collapsed .grip { display: none; }
+.impact.resizing { user-select: none; }
+.impact.resizing .grip::before { opacity: 1; background: var(--tracer); }
+.impact-body { padding-right: 20px !important; }
+@container (min-width: 460px) {
+  .ival .v { font-size: 34px !important; }
+  .ival .k { font-size: 13px; }
+  .isec h4 { font-size: 12px; }
+}
+@container (min-width: 640px) {
+  .ival .v { font-size: 44px !important; }
+  .impact-title { font-size: 22px; }
+}
+.impact-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: none; border-radius: 10px 10px 0 0; background: transparent; backdrop-filter: none; text-align: left; }
+.impact-head:hover { border: none; }
+.impact-title { font-family: var(--font-display); font-weight: 600; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; }
+.impact-head .chev { margin-left: auto; flex: 0 0 auto; }
+.impact.collapsed .impact-body { display: none; }
+.impact.collapsed { align-self: start; }
+.impact.collapsed .mini { display: inline; color: var(--ink-dim); font-size: 14px; }
+.impact.collapsed .chev { transform: rotate(180deg); }
+.impact-body { overflow-y: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.isec { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.isec h4 { margin: 0; font: 600 11px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); }
+.ivals { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.ivals.three { grid-template-columns: repeat(3, 1fr); }
+.ival { display: flex; flex-direction: column; min-width: 0; }
+.ival .k { font-size: 11px; color: var(--ink-dim); display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ival .k i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.ival .v { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
+.ival .v small { font-size: 13px; color: var(--ink-dim); font-weight: 600; }
+.ival .v b { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.ival .v b.good { background: var(--good); } .ival .v b.ok { background: var(--ok); } .ival .v b.bad { background: var(--bad); }
+.ival.right { text-align: right; align-items: flex-end; }
+.idiag { width: 100%; height: auto; display: block; }
+.inote { margin: 0; font-size: 10px; color: var(--ink-dim); }
+.stat.r-good { border-top: 2px solid var(--good); }
+.stat.r-ok { border-top: 2px solid var(--ok); }
+.stat.r-bad { border-top: 2px solid var(--bad); }
+.stat dt i.rd { width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; flex: 0 0 auto; }
+.r-good dt i.rd { background: var(--good); } .r-ok dt i.rd { background: var(--ok); } .r-bad dt i.rd { background: var(--bad); }
+.hero .label .grade { margin-left: 6px; vertical-align: middle; }
+.card-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* fill the panel's height: the stat rows share any spare space evenly, section labels stay with the row below them,
+   and the guides + "What the colours mean" sit at the bottom */
+.card:not(.collapsed) .stats { flex: 1 0 auto; align-content: stretch; grid-auto-rows: auto; }
+.card:not(.collapsed) .stats > .group-label { align-self: end; margin-top: 6px; }
+.card:not(.collapsed) .stats > .stat { justify-content: flex-start; }
+/* same for Impact in the side-by-side layout: each section takes an equal share of spare height, drawings centred in it */
+.hud:not(.docked) .impact:not(.collapsed) .impact-body { flex: 1 1 auto; min-height: 0; }
+.hud:not(.docked) .impact:not(.collapsed) .isec { flex: 1 0 auto; }
+.hud:not(.docked) .impact:not(.collapsed) .isec .idiag { margin-block: auto; }
+.link-btn { background: none; border: none; padding: 4px 0; font: 600 12px/1.2 var(--font-body); color: var(--ink-dim); text-decoration: underline; text-underline-offset: 3px; backdrop-filter: none; }
+.link-btn:hover { color: var(--ink); }
+.link-btn[aria-expanded="true"] { color: var(--tracer); }
+
+/* bottom */
+.bottom { grid-column: 1 / -1; grid-row: 2; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.filters::-webkit-scrollbar { display: none; }
+.filter { white-space: nowrap; }
+.filter .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.filter .avg { color: var(--ink-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
+#toggle-shots .chev { transition: transform 0.2s; }
+#toggle-shots[aria-expanded="false"] .chev { transform: rotate(180deg); }
+.bottom.collapsed .strip, .bottom.collapsed .hint { display: none; }
+.strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px; scroll-behavior: smooth; min-width: 0; }
+.chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 7px 10px; border-radius: 8px; border: 1px solid transparent; background: rgba(255, 255, 255, 0.04);
+  font: inherit; color: inherit; cursor: pointer; min-width: 74px; backdrop-filter: none;
+}
+.chip .n { font-size: 11px; color: var(--ink-dim); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 5px; }
+.chip .n i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.chip .d { font-family: var(--font-display); font-weight: 600; font-size: 19px; font-variant-numeric: tabular-nums; }
+.chip[aria-current="true"] { border-color: var(--tracer); background: rgba(255, 179, 71, 0.12); }
+
+.drop { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 22, 0.75); border: 3px dashed var(--tracer); font-family: var(--font-display); font-size: 32px; letter-spacing: 0.08em; text-transform: uppercase; z-index: 20; }
+.drop-x { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(14px, env(safe-area-inset-right, 0px)); width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; font: 600 22px/1 var(--font-body); }
+.toast { position: fixed; left: 50%; top: calc(70px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: var(--glass-strong); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13px; max-width: min(90vw, 460px); z-index: 30; }
+.toast.err { border-color: var(--warn); }
+.hint { margin: 0; font-size: 11px; color: var(--ink-dim); text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+@media (hover: none) { .hint { display: none; } }
+.help { font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
+.help b { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .hud { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto auto; gap: 8px; }
+  .impact { align-self: start; }
+  .brand h1 { font-size: 18px; }
+  .card { grid-column: 1; grid-row: 2; align-self: end; width: auto; max-width: none; height: var(--card-h, auto); max-height: 80vh; min-height: 120px; }
+  .card-body { padding: 18px 12px 12px; gap: 10px; }
+  .card:not([style*="--card-h"]) { max-height: 42vh; }
+  .grip { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 16px; cursor: ns-resize; border-radius: 10px 10px 0 0; }
+  .grip::before { width: 44px; height: 4px; }
+  .hero .big { font-size: 48px; }
+  .stats { grid-template-columns: repeat(3, 1fr); gap: 8px 10px; }
+  .stat dd { font-size: 18px; }
+  .card:not(.expanded) .more { display: none; }
+  .toggle-more { display: inline-flex; align-self: flex-start; padding: 6px 10px; font-size: 12px; }
+  .bottom { grid-row: 3; }
+  .impact { width: min(var(--imp-w, 300px), 100%); }
+  .impact .grip { display: none; }
+  .ival .v { font-size: 22px; }
+  .tools button .lbl { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .strip { scroll-behavior: auto; } }
+/* tablets held upright: one numbers-only page (impact drawings on top, every stat below), no 3D and no draggable panels */
+body.portrait-tablet #layout-dd, body.portrait-tablet #cam-dd, body.portrait-tablet #mode-dd,
+body.portrait-tablet #replay, body.portrait-tablet #playall, body.portrait-tablet .sp-impact .impact-head { display: none !important; }
+body.portrait-tablet .statpage { padding: 14px 16px 16px; gap: 12px; }
+body.portrait-tablet .sp-layout { display: flex; flex-direction: column; align-items: stretch; gap: 14px; flex: 1 0 auto; }
+body.portrait-tablet .sp-impact { position: static; flex: 0 0 auto; }
+body.portrait-tablet .sp-impact .impact-body { display: grid !important; grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(0, 0.75fr); gap: 0 12px; padding: 12px 12px !important; }
+body.portrait-tablet .sp-impact .isec { border-top: none; border-left: 1px solid var(--line); padding: 0 0 0 14px; align-items: center; text-align: center; justify-content: center; }
+body.portrait-tablet .sp-impact .isec:first-child { border-left: none; padding-left: 0; }
+body.portrait-tablet .sp-impact .isec:first-child .ivals, body.portrait-tablet .sp-impact .isec:last-child .ivals.three { grid-template-columns: 1fr; gap: 6px; }
+body.portrait-tablet .sp-impact .ivals { width: 100%; justify-items: center; }
+body.portrait-tablet .sp-impact .ival, body.portrait-tablet .sp-impact .ival.right { align-items: center; text-align: center; }
+body.portrait-tablet .sp-impact .ival .k, body.portrait-tablet .sp-impact .ival .v { justify-content: center; }
+body.portrait-tablet .sp-impact .ival .v { font-size: 29px !important; gap: 4px; }
+body.portrait-tablet .sp-impact .idiag { max-height: 25vh; margin-inline: auto; }
+body.portrait-tablet .sp-impact .ival .k { font-size: 12px; }
+body.portrait-tablet .sp-impact .ivals { gap: 4px 10px; }
+body.portrait-tablet .sp-impact .isec h4 { font-size: 13px; }
+body.portrait-tablet .sp-impact .inote { display: none; }
+/* one even 4 × 5 grid of stats with no gaps: section headings and the two angle versions of deviation are dropped here */
+body.portrait-tablet #sp-body { flex: 1 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: auto; align-content: stretch; gap: 0 16px; }
+body.portrait-tablet .sp-group, body.portrait-tablet .sp-grid { display: contents; }
+body.portrait-tablet .sp-group h3, body.portrait-tablet .sp-cell.dev-angle { display: none; }
+body.portrait-tablet .sp-cell { padding: 8px 0 10px; }
+body.portrait-tablet .sp-cell .v { font-size: 42px; }
+body.portrait-tablet .sp-cell .k { font-size: 14px; }
+/* touch screens (iPad, phone): bigger tap targets for use at the range */
+@media (pointer: coarse) {
+  button, .btn { padding: 11px 14px; font-size: 14px; }
+  .icon-btn { padding: 11px 13px; }
+  .club-btn { width: 52px; height: 52px; padding: 0; font-size: 18px; }
+  .info-dot { width: 22px; height: 22px; padding: 0; font-size: 12px; }
+  .collapse-btn { width: 32px; height: 32px; padding: 0; }
+  .chip { padding: 9px 12px; min-width: 80px; }
+  .dd-menu button { padding: 12px 12px; }
+  .cg button { width: 52px; padding: 11px 0; }
+  .grip { width: 22px; }
+  .vgrip { height: 20px; }
+}
+</style>
+
+<div id="stage" aria-label="3D driving range showing ball flight"></div>
+
+<div class="hud">
+  <section class="impact panel" id="impact" aria-label="Impact view">
+    <button class="impact-head" id="impact-toggle" aria-expanded="true" aria-controls="impact-body">
+      <span class="impact-title">Impact</span>
+      <span class="mini" id="i-mini"></span>
+      <svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg>
+    </button>
+    <div class="impact-body" id="impact-body"></div>
+    <button class="vgrip" id="impact-vgrip" role="separator" aria-orientation="horizontal" aria-label="Resize impact strip height. Drag, or use arrow keys. Double-click to reset." title="Drag up or down · double-click to reset"></button>
+    <button class="grip" id="impact-grip" role="separator" aria-label="Resize impact panel. Drag, or use arrow keys. Double-click to reset." title="Drag to resize · double-click to reset"></button>
+  </section>
+
+  <aside class="card panel" id="card">
+    <button class="vgrip" id="card-vgrip" role="separator" aria-orientation="horizontal" aria-label="Resize stats height. Drag, or use arrow keys. Double-click to reset." title="Drag down or up · double-click to reset"></button>
+    <button class="grip" id="grip" role="separator" aria-label="Resize stats panel. Drag, or use arrow keys. Double-click to reset." title="Drag to resize · double-click to reset"></button>
+    <div class="card-body" aria-live="polite">
+    <div class="card-head">
+      <span class="club-name" id="c-club">—</span>
+      <span class="mini" id="c-mini"></span>
+      <span class="shot-no" id="c-no"></span>
+      <button class="collapse-btn" id="card-toggle" aria-expanded="true" aria-label="Collapse stats" title="Collapse stats">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg>
+      </button>
+    </div>
+    <div class="hero">
+      <div>
+        <div class="label">Carry</div>
+        <div class="big" id="c-carry">—</div>
+      </div>
+      <button class="shape" id="c-shape" aria-expanded="false" aria-controls="shape-ref" title="Show all shot shapes">—</button>
+    </div>
+    <dl class="stats" id="stats"></dl>
+    <div class="smash-ref" id="shape-ref" hidden>
+      <h3>Shot shapes</h3>
+      <div class="seg" role="group" aria-label="Golfer handedness">
+        <button id="hand-r" aria-pressed="true">Right-handed</button>
+        <button id="hand-l" aria-pressed="false">Left-handed</button>
+      </div>
+      <div class="shape-grid" id="shape-grid"></div>
+      <table>
+        <thead><tr><th>Read from</th><th>Range</th><th>Name</th></tr></thead>
+        <tbody>
+          <tr><td>Start line</td><td>within 2.5°</td><td>straight start</td></tr>
+          <tr><td>(launch dir.)</td><td>beyond 2.5°</td><td>Pull / Push</td></tr>
+          <tr><td>Curve</td><td>within 3°</td><td>no curve</td></tr>
+          <tr><td>(spin axis)</td><td>3–10°</td><td>Draw / Fade</td></tr>
+          <tr><td></td><td>10–20°</td><td>Hook / Slice</td></tr>
+          <tr><td></td><td>over 20°</td><td>Snap hook / Snap slice</td></tr>
+        </tbody>
+      </table>
+      <p><span class="g">Green</span> shapes finish near the target line, <span class="o">amber</span> ones miss but are playable, <span class="b">red</span> ones are big misses.</p>
+    </div>
+    <div class="smash-ref" id="stat-ref" hidden>
+      <h3 id="stat-ref-title">Optimal</h3>
+      <table>
+        <thead><tr><th>This shot</th><th class="g">Good</th><th class="o">OK</th><th class="b">Poor</th></tr></thead>
+        <tbody><tr id="stat-ref-row"></tr></tbody>
+      </table>
+      <p id="stat-ref-text"></p>
+    </div>
+    <div class="smash-ref" id="smash-ref" hidden>
+      <h3>Smash factor guide</h3>
+      <table>
+        <thead><tr><th>Club</th><th class="g">Good</th><th class="o">OK</th><th class="b">Poor</th></tr></thead>
+        <tbody id="smash-rows"></tbody>
+      </table>
+      <p>Smash = ball speed ÷ club speed, so it shows how centred the strike was. Above 1.52 is almost always a misread, so it's marked “check”.</p>
+    </div>
+    <div class="smash-ref" id="rate-ref" hidden>
+      <h3 id="rate-title">Rating guide</h3>
+      <table>
+        <thead><tr><th>Stat</th><th class="g">Green</th><th class="o">Amber</th></tr></thead>
+        <tbody id="rate-rows"></tbody>
+      </table>
+      <p>Anything outside amber is red. Carry, total and speeds are judged against your own average with this club, so they need at least 3 shots of it. Bands are typical good-amateur numbers; ask Claude to change any of them.</p>
+    </div>
+    <div class="card-foot">
+      <button class="toggle-more" id="more">More numbers</button>
+      <button class="link-btn" id="rate-btn" aria-expanded="false" aria-controls="rate-ref">What the colours mean</button>
+    </div>
+    </div>
+  </aside>
+
+  <section class="statpage panel" id="statpage" aria-label="Shot statistics" hidden>
+    <header class="sp-head">
+      <span class="club-name" id="sp-club">—</span>
+      <span class="shape" id="sp-shape" style="cursor:default">—</span>
+      <span class="shot-no" id="sp-no"></span>
+    </header>
+    <div class="sp-layout">
+      <section class="sp-impact" id="sp-impact" aria-label="Impact graphics">
+        <button class="impact-head" id="sp-impact-toggle" aria-expanded="true" aria-controls="sp-impact-body">
+          <span class="impact-title">Impact</span>
+          <svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg>
+        </button>
+        <div class="impact-body" id="sp-impact-body"></div>
+      </section>
+      <div id="sp-body"></div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="controls">
+      <button class="primary" id="replay" title="Space">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M2 1l9 5-9 5z"/></svg>Hit it
+      </button>
+      <button id="prev" aria-label="Previous shot" title="Left arrow">‹</button>
+      <button id="next" aria-label="Next shot" title="Right arrow">›</button>
+      <button id="playall" aria-pressed="false">Play all</button>
+      <button id="toggle-shots" aria-expanded="true" aria-controls="strip" title="Show or hide the shot list">
+        <svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 4l4 4 4-4"/></svg><span>Hide shots</span>
+      </button>
+      <div class="dd" id="filter-dd">
+        <button class="dd-btn" id="filter-btn" aria-haspopup="true" aria-expanded="false" aria-controls="filters" title="Show shots for"><span id="filter-label">All clubs</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg></button>
+        <div class="dd-menu panel" id="filters" role="menu" aria-label="Show shots for" hidden></div>
+      </div>
+      <div class="rtools">
+        <label class="btn icon-btn" for="file" title="Load CSV from the Garmin Golf app">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1l4 4h-3v6H7V5H4l4-4zM2 13h12v2H2z"/></svg>
+          <input type="file" id="file" accept=".csv,text/csv" aria-label="Load CSV">
+        </label>
+        <div class="dd" id="live-dd">
+          <button class="dd-btn live-btn" id="live-btn" aria-haspopup="true" aria-expanded="false" aria-controls="live-menu" title="Connect your R10 live">
+            <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+            <svg width="12" height="14" viewBox="0 0 12 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M2 4.5l8 7-4 3.5V1l4 3.5-8 7"/></svg>
+            <span id="live-label">R10</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg>
+          </button>
+          <div class="dd-menu right panel live-menu" id="live-menu" hidden>
+            <h3>Live R10</h3>
+            <div class="live-status"><span class="live-dot" id="live-dot2" aria-hidden="true"></span><strong id="live-status">Not connected</strong><span id="live-batt"></span></div>
+            <p class="live-err" id="live-err" hidden></p>
+            <div class="live-nobt" id="live-nobt" hidden>
+              <p>This browser can't use Bluetooth. Open this page in the free <b>Bluefy</b> app on iPad (or Chrome on a computer or Android).</p>
+              <div class="live-url"><code id="live-url"></code><button id="live-copyurl">Copy link</button></div>
+            </div>
+            <ol class="live-steps" id="live-steps">
+              <li>Force-quit Garmin Golf (swipe it away) so it lets go of the R10.</li>
+              <li>Turn the R10 on and set it up behind the ball.</li>
+              <li>Tap <b>Connect R10</b> and pick “Approach R10”. Allow pairing if asked.</li>
+            </ol>
+            <div class="live-actions">
+              <button class="primary" id="live-connect">Connect R10</button>
+              <button id="live-disconnect" hidden>Disconnect</button>
+            </div>
+            <p class="live-note">Shots are saved under the club on the round button, so change it when you change clubs. Carry and total are worked out by this page from the R10's launch numbers.</p>
+            <details class="live-logbox">
+              <summary>Connection log</summary>
+              <pre id="live-log">Nothing yet.</pre>
+              <button id="live-copylog">Copy log</button>
+            </details>
+          </div>
+        </div>
+        <div class="dd" id="layout-dd">
+          <button class="dd-btn" id="layout-btn" aria-haspopup="true" aria-expanded="false" aria-controls="layout-menu" title="Panel layout">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" id="layout-icon"><rect x="1.5" y="2" width="4" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="10.5" y="2" width="4" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span id="layout-label">Auto</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg>
+          </button>
+          <div class="dd-menu right panel" id="layout-menu" role="menu" hidden>
+            <button data-layout="auto" aria-pressed="true">Auto<small>Side by side, stacks when the panels would touch</small></button>
+            <button data-layout="side" aria-pressed="false">Side by side<small>Impact on the left, stats on the right</small></button>
+            <button data-layout="stacked" aria-pressed="false">Stacked<small>Stats across the top, Impact across the bottom</small></button>
+          </div>
+        </div>
+        <div class="dd" id="cam-dd">
+          <button class="dd-btn" id="cam-btn" aria-haspopup="true" aria-expanded="false" aria-controls="cam-menu" title="Camera"><span id="cam-label">TV cam</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg></button>
+          <div class="dd-menu right panel" id="cam-menu" role="menu" hidden>
+            <button id="cam-broadcast" aria-pressed="true">TV cam<small>Follows, then cuts to the landing</small></button>
+            <button id="cam-chase" aria-pressed="false">Chase<small>Rides behind the ball</small></button>
+            <button id="cam-tee" aria-pressed="false">Tee<small>Stays behind the ball</small></button>
+            <button id="cam-top" aria-pressed="false">Top<small>Overhead dispersion</small></button>
+            <button id="cam-free" aria-pressed="false">Free<small>Stays where you put it</small></button>
+          </div>
+        </div>
+        <div class="dd" id="mode-dd">
+          <button class="dd-btn" id="mode-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mode-menu" title="View"><span id="mode-label">Visual</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg></button>
+          <div class="dd-menu right panel" id="mode-menu" role="menu" hidden>
+            <button id="mode-visual" aria-pressed="true">Visual<small>3D range and impact graphics</small></button>
+            <button id="mode-stats" aria-pressed="false">Stats<small>Numbers, with impact graphics</small></button>
+          </div>
+        </div>
+        <div class="dd" id="units-dd">
+          <button class="dd-btn" id="units-btn" aria-haspopup="true" aria-expanded="false" aria-controls="units-menu" title="Units"><span id="units-label">yd</span><svg class="dd-chev" width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M2 8l4-4 4 4"/></svg></button>
+          <div class="dd-menu right panel" id="units-menu" role="menu" hidden style="min-width:150px">
+            <button id="u-yd" aria-pressed="true">Yards<small>mph, feet</small></button>
+            <button id="u-m" aria-pressed="false">Metres<small>km/h, metres</small></button>
+          </div>
+        </div>
+        <div class="clubpick">
+        <button class="club-btn" id="club-btn" aria-haspopup="true" aria-expanded="false" aria-controls="club-menu" title="Pick the club you're hitting">7i</button>
+        <div class="club-menu panel" id="club-menu" hidden>
+          <h3>Club you're hitting</h3>
+          <div id="club-groups"></div>
+          <p>New shots are saved under this club, so each club's shots stay together.</p>
+          <div class="club-actions">
+            <button id="sim-shot" title="Adds a made-up shot with this club, for trying things out before the R10 is connected">Simulate a shot</button>
+            <button id="new-session">New session</button>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="strip panel" id="strip" role="list" aria-label="Shots"></div>
+    <p class="hint" id="hint">Drag to look around · right-drag or two fingers to move · scroll or pinch to zoom · double-click to reset view</p>
+  </section>
+</div>
+
+<span id="src" hidden>Sample session</span>
+<div class="drop" id="drop" hidden><span>Drop your R10 CSV</span><button class="drop-x" id="drop-x" aria-label="Close">×</button></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+
+// Ball flight model. Frame: x = downrange, y = up, z = right (metres, m/s, rad/s).
+const BALL = { m: 0.04593, r: 0.02135, rho: 1.2, g: 9.81 };
+BALL.A = Math.PI * BALL.r * BALL.r;
+const D2R = Math.PI / 180;
+
+function aeroCoeffs(S) {
+  const cl = 0.26 * (1 - Math.exp(-S / 0.09));
+  const cd = 0.22 + 0.22 * S;
+  return { cl, cd };
+}
+
+// shot: ballSpeed (m/s), launch (deg), dir (deg, +right), spin (rpm), axis (deg, +curves right)
+function simulateFlight(shot) {
+  const V = shot.ballSpeed, la = (shot.launch ?? 12) * D2R, ld = (shot.dir ?? 0) * D2R;
+  let w = ((shot.spin ?? 3000) * 2 * Math.PI) / 60;
+  const ax = (shot.axis ?? 0) * D2R;
+  const wh = [0, -Math.sin(ax), Math.cos(ax)];
+  let p = [0, 0.02, 0];
+  let v = [V * Math.cos(la) * Math.cos(ld), V * Math.sin(la), V * Math.cos(la) * Math.sin(ld)];
+  const dt = 1 / 240, k = (0.5 * BALL.rho * BALL.A) / BALL.m;
+  const pts = [{ t: 0, p: p.slice() }];
+  let t = 0;
+  while (t < 14) {
+    const sp = Math.hypot(v[0], v[1], v[2]);
+    const S = (BALL.r * w) / Math.max(sp, 1);
+    const { cl, cd } = aeroCoeffs(S);
+    const vh = [v[0] / sp, v[1] / sp, v[2] / sp];
+    const c = [wh[1] * vh[2] - wh[2] * vh[1], wh[2] * vh[0] - wh[0] * vh[2], wh[0] * vh[1] - wh[1] * vh[0]];
+    const a = [
+      -k * cd * sp * v[0] + k * cl * sp * sp * c[0],
+      -k * cd * sp * v[1] + k * cl * sp * sp * c[1] - BALL.g,
+      -k * cd * sp * v[2] + k * cl * sp * sp * c[2],
+    ];
+    v = [v[0] + a[0] * dt, v[1] + a[1] * dt, v[2] + a[2] * dt];
+    p = [p[0] + v[0] * dt, p[1] + v[1] * dt, p[2] + v[2] * dt];
+    w *= Math.exp(-dt / 22);
+    t += dt;
+    if (p[1] <= 0 && t > 0.1) {
+      const prev = pts[pts.length - 1];
+      const f = prev.p[1] / (prev.p[1] - p[1] || 1);
+      const land = [prev.p[0] + (p[0] - prev.p[0]) * f, 0, prev.p[2] + (p[2] - prev.p[2]) * f];
+      pts.push({ t: prev.t + dt * f, p: land });
+      break;
+    }
+    pts.push({ t, p: p.slice() });
+  }
+  const last = pts[pts.length - 1];
+  let apex = 0;
+  for (const q of pts) apex = Math.max(apex, q.p[1]);
+  const sp = Math.hypot(v[0], v[1], v[2]);
+  const descent = Math.atan2(-v[1], Math.hypot(v[0], v[2])) / D2R;
+  return { pts, carry: Math.hypot(last.p[0], last.p[2]), side: last.p[2], apex, descent, landSpeed: sp, time: last.t };
+}
+
+
+// Live connection to a Garmin Approach R10 over Web Bluetooth (Bluefy on iPad, Chrome on desktop/Android).
+// Protocol ported from mholow/gsp-r10-adapter (MIT licence, (c) 2022 mholow), the open-source R10 → GSPro bridge.
+const R10 = (() => {
+  const U = (s) => `6a4e${s}-667b-11e3-949a-0800200c9a66`;
+  const SVC_IF = U("2800"), CH_NOTIFY = U("2812"), CH_WRITE = U("2822");
+  const SVC_MEAS = U("3400"), MEAS_CHARS = [U("3401"), U("3402"), U("3403")];
+  const STATES = ["Standby", "Checking interference", "Ready", "Recording", "Processing", "Error"];
+  const ERRORS = ["Unknown error", "Overheating", "Radar saturated", "Tilted — level the R10"];
+
+  const hex = (a) => Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+  const fromHex = (h) => Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+
+  // CRC-16/ARC, same table method as the PC adapter
+  const CRC_T = (() => {
+    const t = new Uint16Array(256);
+    for (let i = 0; i < 256; i++) {
+      let v = 0, tmp = i;
+      for (let j = 0; j < 8; j++) { v = ((v ^ tmp) & 1) ? (v >>> 1) ^ 0xa001 : v >>> 1; tmp >>>= 1; }
+      t[i] = v;
+    }
+    return t;
+  })();
+  function crc16(bytes) { let c = 0; for (const b of bytes) c = ((c >>> 8) ^ CRC_T[(c ^ b) & 0xff]) & 0xffff; return c; }
+
+  // COBS, ported line for line from the PC adapter
+  function cobsEncode(input) {
+    const out = []; let di = 0, d = 1;
+    for (const b of input) {
+      if (b !== 0 && d < 255) { out.push(b); d++; }
+      else { out.splice(di, 0, d); di = out.length; d = 1; }
+    }
+    if (out.length !== 255 && out.length > 0) out.splice(di, 0, d);
+    return out;
+  }
+  function cobsDecode(input) {
+    const out = []; let di = 0;
+    while (di < input.length) {
+      const d = input[di];
+      if (input.length < di + d || d < 1) return [];
+      for (let i = 1; i < d; i++) out.push(input[di + i]);
+      di += d;
+      if (d < 0xff && di < input.length) out.push(0);
+    }
+    return out;
+  }
+  // [length u16][message][crc u16], COBS-encoded between 0x00 delimiters
+  function frame(msg) {
+    const len = msg.length + 4, body = [len & 0xff, len >> 8, ...msg], c = crc16(body);
+    return [0, ...cobsEncode([...body, c & 0xff, c >> 8]), 0];
+  }
+
+  // tiny protobuf writer / reader (only what the R10 needs)
+  function varint(n) { const o = []; do { let b = n & 0x7f; n = Math.floor(n / 128); if (n) b |= 0x80; o.push(b); } while (n); return o; }
+  const pmsg = (no, bytes) => [...varint((no << 3) | 2), ...varint(bytes.length), ...bytes];
+  const pint = (no, v) => [...varint(no << 3), ...varint(v)];
+  function pdecode(u8) {
+    const m = new Map(); let i = 0;
+    const rv = () => { let r = 0, s = 1, b; do { b = u8[i++]; r += (b & 0x7f) * s; s *= 128; } while (b & 0x80 && i < u8.length); return r; };
+    while (i < u8.length) {
+      const tag = rv(), no = Math.floor(tag / 8), wt = tag & 7; let v;
+      if (wt === 0) v = rv();
+      else if (wt === 2) { const l = rv(); v = u8.slice(i, i + l); i += l; }
+      else if (wt === 5) { v = new DataView(u8.buffer, u8.byteOffset + i, 4).getFloat32(0, true); i += 4; }
+      else if (wt === 1) { v = new DataView(u8.buffer, u8.byteOffset + i, 8).getFloat64(0, true); i += 8; }
+      else break;
+      if (!m.has(no)) m.set(no, []);
+      m.get(no).push(v);
+    }
+    return m;
+  }
+  const pget = (m, no) => (m && m.has(no) ? m.get(no)[0] : undefined);
+  const psub = (m, no) => { const v = pget(m, no); return v instanceof Uint8Array ? pdecode(v) : null; };
+
+  const REQ = {
+    wake: pmsg(38, pmsg(3, [])),
+    status: pmsg(38, pmsg(1, [])),
+    subscribe: pmsg(30, pmsg(1, pmsg(1, pint(1, 8)))), // alerts: LAUNCH_MONITOR (8)
+  };
+
+  // Alert from the R10 → { state, shot, error }
+  function parseAlert(wrapper) {
+    const det = psub(psub(psub(wrapper, 30), 3), 1001);
+    if (!det) return null;
+    const out = {};
+    const st = psub(det, 1); if (st) out.state = pget(st, 1) ?? 0;
+    const er = psub(det, 3); if (er && er.has(1)) out.error = { code: pget(er, 1), severity: pget(er, 2) ?? 0 };
+    const mt = psub(det, 2);
+    if (mt) {
+      const b = psub(mt, 3), c = psub(mt, 4), f = (m, n) => { const v = pget(m, n); return typeof v === "number" ? v : null; };
+      out.shot = {
+        id: pget(mt, 1) ?? 0,
+        ballSpeed: f(b, 3), launch: f(b, 1), dir: f(b, 2) ?? 0, spin: f(b, 5), axisRaw: f(b, 4) ?? 0, spinCalc: pget(b, 6),
+        clubSpeed: f(c, 1), face: f(c, 2), path: f(c, 3), attack: f(c, 4),
+      };
+    }
+    return out;
+  }
+  // R10 numbers → R10 Range's shot format (m/s, degrees; spin axis + curves right, so the R10's raw axis is flipped)
+  function toShot(m) {
+    const club = m.clubSpeed && m.clubSpeed > 0.5;
+    return {
+      ballSpeed: m.ballSpeed, launch: m.launch, dir: m.dir, spin: m.spin, axis: -m.axisRaw,
+      clubSpeed: club ? m.clubSpeed : null, face: club ? m.face : null, path: club ? m.path : null, attack: club ? m.attack : null,
+      f2p: club && m.face != null && m.path != null ? m.face - m.path : null,
+      smash: club ? m.ballSpeed / m.clubSpeed : null,
+      apex: null, carry: null, carryDev: null, total: null, totalDev: null, r10Id: m.id,
+    };
+  }
+
+  class Link {
+    constructor({ log, onState, onShot }) {
+      this.log = log; this.onState = onState; this.onShot = onShot;
+      this.header = 0; this.hsDone = false; this.buf = []; this.counter = 0; this.pending = null;
+      this.wq = Promise.resolve(); this.pq = Promise.resolve(); this.seen = new Set();
+      this.device = null; this.writer = null; this.userClosed = false; this.battery = null;
+    }
+    static supported() { return typeof navigator !== "undefined" && !!navigator.bluetooth; }
+    async connect() {
+      this.userClosed = false;
+      this.onState({ phase: "picking" });
+      this.log("Asking for the R10…");
+      this.device = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: "Approach" }],
+        optionalServices: [SVC_IF, SVC_MEAS, "battery_service", "device_information"],
+      });
+      this.log(`Picked “${this.device.name || "device"}”`);
+      this.device.addEventListener("gattserverdisconnected", () => this.dropped());
+      await this.setup();
+    }
+    async setup() {
+      this.onState({ phase: "connecting" });
+      this.hsDone = false; this.header = 0; this.buf = []; this.counter = 0; this.pending = null;
+      const server = await this.device.gatt.connect();
+      this.log("Bluetooth connected");
+      try {
+        const ms = await server.getPrimaryService(SVC_MEAS);
+        for (const u of MEAS_CHARS) { const ch = await ms.getCharacteristic(u); await ch.startNotifications(); }
+        this.log("Measurement service on");
+      } catch (e) { this.log("Measurement service: " + e.message); }
+      try {
+        const bs = await server.getPrimaryService("battery_service"), bc = await bs.getCharacteristic("battery_level");
+        this.battery = (await bc.readValue()).getUint8(0);
+        this.log(`Battery ${this.battery}%`);
+        bc.addEventListener("characteristicvaluechanged", (e) => { this.battery = e.target.value.getUint8(0); this.onState({ battery: this.battery }); });
+        await bc.startNotifications().catch(() => {});
+      } catch (e) { this.log("Battery: " + e.message); }
+      const svc = await server.getPrimaryService(SVC_IF);
+      this.writer = await svc.getCharacteristic(CH_WRITE);
+      const notifier = await svc.getCharacteristic(CH_NOTIFY);
+      if (!this.boundNotify) this.boundNotify = (e) => { const v = e.target.value; this.onNotify(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)); };
+      notifier.removeEventListener("characteristicvaluechanged", this.boundNotify);
+      notifier.addEventListener("characteristicvaluechanged", this.boundNotify);
+      await notifier.startNotifications();
+      this.log("Talking to the R10…");
+      await this.handshake();
+      this.log(`Handshake done (channel ${this.header})`);
+      const wake = await this.request(REQ.wake, "wake");
+      const ws = pget(psub(psub(wake, 38), 4), 1);
+      this.log("Wake: " + (["woke up", "already awake", "error"][ws ?? 0] || ws));
+      const status = await this.request(REQ.status, "status");
+      const s = pget(psub(psub(psub(status, 38), 2), 1), 1);
+      if (s != null) this.onState({ phase: "live", r10: s });
+      const sub = await this.request(REQ.subscribe, "subscribe");
+      const subOk = sub && psub(psub(sub, 30), 2);
+      this.log(subOk ? "Subscribed to shots ✓" : "Subscribe: no answer (shots may still arrive)");
+      this.onState({ phase: "live", r10: s ?? 2, battery: this.battery });
+    }
+    handshake() {
+      return new Promise((resolve, reject) => {
+        this.hsResolve = resolve;
+        const t = setTimeout(() => reject(new Error("The R10 didn't answer the handshake")), 10000);
+        this.hsResolve = () => { clearTimeout(t); resolve(); };
+        this.rawWrite([0x00, ...fromHex("000000000000000000010000")]);
+      });
+    }
+    onNotify(bytes) {
+      if (!bytes.length) return;
+      const h = bytes[0], msg = bytes.slice(1);
+      if (h === 0 || !this.hsDone) {
+        if (hex(msg).startsWith("010000000000000000010000") && msg.length > 12) {
+          this.header = msg[12]; this.hsDone = true;
+          this.rawWrite([this.header, 0x00]);
+          this.hsResolve && this.hsResolve();
+        }
+        return;
+      }
+      for (const b of msg) {
+        if (b === 0) { if (this.buf.length) { const f = cobsDecode(this.buf); this.buf = []; if (f.length) this.process(f); } }
+        else this.buf.push(b);
+      }
+    }
+    process(f) {
+      if (f.length < 6) return;
+      const got = f[f.length - 2] | (f[f.length - 1] << 8);
+      if (crc16(f.slice(0, -2)) !== got) { this.log("Skipped a garbled message (CRC)"); return; }
+      const msg = Uint8Array.from(f.slice(2, -2)), type = hex(msg.slice(0, 2));
+      const ack = [0x00];
+      if (type === "b413" || type === "b313") {
+        ack.push(msg[2], msg[3], 0, 0, 0, 0, 0, 0, 0);
+        const body = pdecode(msg.slice(16));
+        if (type === "b413") {
+          const c = msg[2] | (msg[3] << 8);
+          if (this.pending && c === (this.counter & 0xffff)) { const p = this.pending; this.pending = null; p(body); }
+        } else this.alert(body);
+      }
+      this.send([0x88, 0x13, msg[0], msg[1], ...ack]);
+    }
+    alert(wrapper) {
+      const a = parseAlert(wrapper);
+      if (!a) return;
+      if (a.state != null) {
+        this.onState({ phase: "live", r10: a.state });
+        if (a.state === 0) { this.log("R10 went to standby, waking it"); this.request(REQ.wake, "wake"); }
+      }
+      if (a.error) { this.log(`R10 error: ${ERRORS[a.error.code] || a.error.code}`); this.onState({ error: ERRORS[a.error.code] || "R10 error" }); }
+      if (a.shot) {
+        if (this.seen.has(a.shot.id)) return;
+        this.seen.add(a.shot.id);
+        const s = a.shot;
+        this.log(`Shot ${s.id}: ball ${(s.ballSpeed * 2.237).toFixed(1)} mph, launch ${s.launch?.toFixed(1)}°, spin ${Math.round(s.spin ?? 0)}, club ${((s.clubSpeed ?? 0) * 2.237).toFixed(1)} mph`);
+        if (s.ballSpeed && s.ballSpeed > 1) this.onShot(toShot(s));
+        else this.log("No ball speed (practice swing), not saved");
+      }
+    }
+    // one protobuf request at a time; resolves with the decoded reply, or null after 5 s
+    request(bytes, name) {
+      const run = () => new Promise((resolve) => {
+        const c = this.counter, l = bytes.length;
+        const le32 = (n) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
+        const t = setTimeout(() => { this.pending = null; this.log(`No answer to ${name}`); resolve(null); }, 5000);
+        this.pending = (body) => { clearTimeout(t); this.counter++; resolve(body); };
+        this.send([0xb3, 0x13, ...le32(c), 0, 0, ...le32(l), ...le32(l), ...bytes]);
+      });
+      const p = this.pq.then(run, run);
+      this.pq = p.catch(() => {});
+      return p;
+    }
+    send(msg) {
+      const enc = frame(msg);
+      for (let i = 0; i < enc.length; i += 19) this.rawWrite([this.header, ...enc.slice(i, i + 19)]);
+    }
+    rawWrite(arr) {
+      const u8 = Uint8Array.from(arr), w = this.writer;
+      this.wq = this.wq.then(() => (w.writeValueWithResponse ? w.writeValueWithResponse(u8) : w.writeValue(u8))).catch((e) => this.log("Write failed: " + e.message));
+    }
+    async dropped() {
+      this.hsDone = false;
+      if (this.userClosed) { this.onState({ phase: "off" }); return; }
+      this.onState({ phase: "reconnecting" });
+      this.log("Connection dropped, reconnecting…");
+      for (let i = 1; i <= 6 && !this.userClosed; i++) {
+        await new Promise((r) => setTimeout(r, 1500 * i));
+        try { await this.setup(); this.log("Reconnected"); return; } catch (e) { this.log(`Reconnect ${i} failed: ${e.message}`); }
+      }
+      this.onState({ phase: "off", error: "Lost the R10. Tap Connect to try again." });
+    }
+    disconnect() { this.userClosed = true; try { this.device && this.device.gatt.connected && this.device.gatt.disconnect(); } catch (e) {} this.onState({ phase: "off" }); }
+  }
+  return { Link, STATES, _test: { crc16, cobsEncode, cobsDecode, frame, pmsg, pint, pdecode, psub, pget, parseAlert, toShot, REQ, hex, fromHex } };
+})();
+
+
+/* ---------- units ---------- */
+const MPH = 0.44704, YD = 0.9144, FT = 0.3048, KMH = 1 / 3.6;
+let units = "yd";
+try { const u = localStorage.getItem("r10-units"); if (u === "m" || u === "yd") units = u; } catch (e) {}
+const dist = (m) => (m == null ? null : units === "yd" ? m / YD : m);
+const dUnit = () => units;
+const spd = (ms) => (ms == null ? null : units === "yd" ? ms / MPH : ms / KMH);
+const sUnit = () => (units === "yd" ? "mph" : "km/h");
+const height = (m) => (m == null ? null : units === "yd" ? m / FT : m);
+const hUnit = () => (units === "yd" ? "ft" : "m");
+const fmt = (v, d = 0) => (v == null || !isFinite(v) ? "—" : v.toFixed(d));
+const signed = (v, d = 1) => (v == null || !isFinite(v) ? "—" : (v > 0 ? "R " : v < 0 ? "L " : "") + Math.abs(v).toFixed(d));
+const io = (v, d = 1) => (v == null || !isFinite(v) ? "—" : (v > 0 ? "+" : "") + v.toFixed(d));
+
+/* ---------- CSV parsing (Garmin Golf export) ---------- */
+function parseCSV(text) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(f); f = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += ch;
+  }
+  if (f.length || row.length) { row.push(f); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+const FIELDS = {
+  date: ["date"], club: ["club type", "club name", "club"], clubName: ["club name"],
+  clubSpeed: ["club speed", "club head speed"], attack: ["attack angle"], path: ["club path"],
+  face: ["club face", "face angle"], f2p: ["face to path"], ballSpeed: ["ball speed"], smash: ["smash factor"],
+  launch: ["launch angle"], dir: ["launch direction"], backspin: ["backspin", "back spin"], sidespin: ["sidespin", "side spin"],
+  spin: ["spin rate"], spinType: ["spin rate type"], axis: ["spin axis"], apex: ["apex height", "apex"],
+  carry: ["carry distance", "carry"], carryDevA: ["carry deviation angle"], carryDev: ["carry deviation distance"],
+  total: ["total distance", "total"], totalDevA: ["total deviation angle"], totalDev: ["total deviation distance"],
+};
+
+function normHead(h) { return h.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, "").replace(/\s+/g, " ").trim(); }
+function unitIn(h) { const m = h.match(/[\[(]\s*([a-z/]+)\s*[\])]/i); return m ? m[1].toLowerCase() : null; }
+
+function toSI(val, unit, kind) {
+  if (val == null) return null;
+  if (kind === "speed") { if (unit === "km/h" || unit === "kmh") return val * KMH; if (unit === "m/s") return val; return val * MPH; }
+  if (kind === "dist") { if (unit === "m") return val; if (unit === "ft") return val * FT; return val * YD; }
+  if (kind === "height") { if (unit === "m") return val; if (unit === "yd") return val * YD; return val * FT; }
+  return val;
+}
+
+function loadGarminCSV(text) {
+  const rows = parseCSV(text.replace(/^﻿/, ""));
+  const hi = rows.findIndex((r) => r.some((c) => /ball speed/i.test(c)));
+  if (hi < 0) throw new Error("Couldn't find a Ball Speed column. Export the session from the Garmin Golf app (Range or Sim session → share → CSV) and load that file.");
+  const head = rows[hi];
+  let unitsRow = null, start = hi + 1;
+  if (rows[hi + 1] && rows[hi + 1].some((c) => /^\s*\[.*\]\s*$/.test(c))) { unitsRow = rows[hi + 1]; start = hi + 2; }
+  const col = {}, unitOf = {};
+  const nh = head.map(normHead);
+  for (const [key, names] of Object.entries(FIELDS)) {
+    for (const n of names) {
+      const i = nh.indexOf(n);
+      if (i >= 0) { col[key] = i; unitOf[key] = unitsRow ? unitIn(unitsRow[i] || "") : unitIn(head[i]); break; }
+    }
+  }
+  const num = (r, k) => { if (col[k] == null) return null; const s = (r[col[k]] || "").trim().replace(",", "."); if (s === "") return null; const v = parseFloat(s); return isFinite(v) ? v : null; };
+  const str = (r, k) => (col[k] == null ? "" : (r[col[k]] || "").trim());
+  const shots = [];
+  for (const r of rows.slice(start)) {
+    const bs = num(r, "ballSpeed");
+    if (!bs || bs <= 0) continue; // phantom swings: swing seen, ball not tracked
+    const s = {
+      club: str(r, "club") || str(r, "clubName") || "Club",
+      date: str(r, "date"),
+      clubSpeed: toSI(num(r, "clubSpeed"), unitOf.clubSpeed, "speed"),
+      ballSpeed: toSI(bs, unitOf.ballSpeed, "speed"),
+      smash: num(r, "smash"), attack: num(r, "attack"), path: num(r, "path"), face: num(r, "face"), f2p: num(r, "f2p"),
+      launch: num(r, "launch"), dir: num(r, "dir"), spin: num(r, "spin"), axis: num(r, "axis"),
+      backspin: num(r, "backspin"), sidespin: num(r, "sidespin"), spinType: str(r, "spinType"),
+      apex: toSI(num(r, "apex"), unitOf.apex, "height"),
+      carry: toSI(num(r, "carry"), unitOf.carry, "dist"),
+      carryDev: toSI(num(r, "carryDev"), unitOf.carryDev, "dist"),
+      total: toSI(num(r, "total"), unitOf.total, "dist"),
+      totalDev: toSI(num(r, "totalDev"), unitOf.totalDev, "dist"),
+    };
+    if (s.spin == null && s.backspin != null) s.spin = Math.hypot(s.backspin, s.sidespin || 0);
+    if (s.axis == null && s.backspin && s.sidespin != null) s.axis = Math.atan2(s.sidespin, s.backspin) / D2R;
+    if (s.f2p == null && s.face != null && s.path != null) s.f2p = s.face - s.path;
+    if (s.smash == null && s.clubSpeed) s.smash = s.ballSpeed / s.clubSpeed;
+    shots.push(s);
+  }
+  if (!shots.length) throw new Error("The file loaded, but no shots had a ball speed above zero.");
+  return shots;
+}
+
+/* ---------- sample session (clearly labelled) ---------- */
+function makeSample() {
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const plan = [["Pitching Wedge", 6], ["7 Iron", 8], ["Driver", 8]];
+  const out = [];
+  for (const [club, n] of plan) for (let i = 0; i < n; i++) out.push({ ...genShot(club, rnd), date: "Sample", sample: true });
+  return out;
+}
+
+function estimateRoll(f, club) {
+  const frac = Math.max(0.015, Math.min(0.16, (52 - f.descent) / 140));
+  return f.carry * frac;
+}
+
+/* ---------- trajectory shaping: physics shape fitted to the R10's own numbers ---------- */
+function buildTrajectory(s) {
+  const f = simulateFlight(s);
+  let pts = f.pts.map((q) => ({ t: q.t, x: q.p[0], y: q.p[1], z: q.p[2] }));
+  const landSim = pts[pts.length - 1];
+  let est = { carry: s.carry == null, apex: s.apex == null };
+  // Fit landing point to the R10's carry + carry deviation when present.
+  if (s.carry != null) {
+    const dev = s.carryDev ?? landSim.z * (s.carry / Math.max(1, f.carry));
+    const tx = Math.sqrt(Math.max(1, s.carry * s.carry - dev * dev));
+    const a0 = Math.atan2(landSim.z, landSim.x), a1 = Math.atan2(dev, tx);
+    const sc = Math.hypot(tx, dev) / Math.max(1, Math.hypot(landSim.x, landSim.z));
+    const rot = a1 - a0, c = Math.cos(rot), sn = Math.sin(rot);
+    pts = pts.map((q) => {
+      const u = q.t / landSim.t;
+      // rotate only gradually so the start line still matches launch direction
+      const r = rot * u, cr = Math.cos(r), sr = Math.sin(r);
+      const x = (q.x * cr - q.z * sr) * sc, z = (q.x * sr + q.z * cr) * sc;
+      return { t: q.t, x, y: q.y, z };
+    });
+    void c; void sn;
+    // fine-correct any residual so the ball lands exactly on the reported spot
+    const L = pts[pts.length - 1], ex = tx - L.x, ez = dev - L.z;
+    pts = pts.map((q) => { const u = (q.t / landSim.t) ** 2; return { ...q, x: q.x + ex * u, z: q.z + ez * u }; });
+  }
+  let apex = 0; for (const q of pts) apex = Math.max(apex, q.y);
+  if (s.apex != null && apex > 0) { const k = s.apex / apex; pts = pts.map((q) => ({ ...q, y: q.y * k })); apex = s.apex; }
+  const land = pts[pts.length - 1];
+  const carry = Math.hypot(land.x, land.z);
+  // rollout
+  let rollEnd;
+  if (s.total != null && s.total > carry) {
+    const tdev = s.totalDev ?? land.z * (s.total / carry);
+    rollEnd = { x: Math.sqrt(Math.max(0, s.total * s.total - tdev * tdev)), z: tdev };
+  } else {
+    const r = estimateRoll(f, s.club), ang = Math.atan2(land.z, land.x);
+    rollEnd = { x: land.x + r * Math.cos(ang), z: land.z + r * Math.sin(ang) };
+    est.total = true;
+  }
+  const arcs = [0];
+  for (let i = 1; i < pts.length; i++) arcs.push(arcs[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
+  return { pts, arcs, flightTime: land.t, land, rollEnd, apex, carry, descent: f.descent, est };
+}
+
+let lefty = false;
+try { lefty = localStorage.getItem("r10-hand") === "L"; } catch (e) {}
+const CURVES = { L: ["", "Draw", "Hook", "Snap hook"], R: ["", "Fade", "Slice", "Snap slice"] };
+function shapeParts(s) {
+  const m = lefty ? -1 : 1, d = (s.dir ?? 0) * m, a = (s.axis ?? 0) * m;
+  const start = d < -2.5 ? "pull" : d > 2.5 ? "push" : "";
+  const mag = Math.abs(a), lvl = mag < 3 ? 0 : mag < 10 ? 1 : mag < 20 ? 2 : 3;
+  return { start, lvl, side: lvl === 0 ? "" : a < 0 ? "L" : "R" };
+}
+function shapeName({ start, lvl, side }) {
+  const curve = lvl ? CURVES[side][lvl] : "";
+  if (!start && !curve) return "Straight";
+  if (!curve) return start === "pull" ? "Pull" : "Push";
+  if (!start) return curve;
+  return (start === "pull" ? "Pull " : "Push ") + curve.toLowerCase();
+}
+// same-side start + curve compounds the miss; opposite sides curve back toward the target
+function shapeQuality({ start, lvl, side }) {
+  const startSide = start === "pull" ? "L" : start === "push" ? "R" : "";
+  if (lvl === 3) return "bad";
+  if (lvl === 2) return startSide === side ? "bad" : "ok";
+  if (lvl === 1) return startSide === side ? "ok" : "good";
+  return start ? "ok" : "good";
+}
+function shotShape(s) { return shapeName(shapeParts(s)); }
+
+/* ---------- colours per club ---------- */
+const CLUB_COLORS = ["#ffb347", "#6fd3ff", "#b49cff", "#7fd18b", "#ff8fb1", "#f4e06d", "#5fe0c4", "#ff9a6b"];
+const clubOrderKey = (c) => {
+  const s = c.toLowerCase();
+  if (/driver|^dr/.test(s)) return 0;
+  const w = s.match(/(\d+)\s*(wood|w\b)/); if (w) return 1 + +w[1] / 10;
+  const h = s.match(/(\d+)\s*(hybrid|h\b)/); if (h) return 2 + +h[1] / 10;
+  const i = s.match(/(\d+)\s*(iron|i\b)/); if (i) return 3 + +i[1] / 10;
+  if (/pitch|pw/.test(s)) return 4.1; if (/gap|gw|aw|approach/.test(s)) return 4.2; if (/sand|sw/.test(s)) return 4.3; if (/lob|lw/.test(s)) return 4.4;
+  if (/wedge/.test(s)) return 4.5; return 5;
+};
+
+/* ---------- smash factor grading ---------- */
+const SMASH_BANDS = [
+  { key: "driver", label: "Driver", good: 1.45, ok: 1.4 },
+  { key: "wood", label: "Woods & hybrids", good: 1.42, ok: 1.37 },
+  { key: "iron", label: "Irons", good: 1.33, ok: 1.28 },
+  { key: "wedge", label: "Wedges", good: 1.22, ok: 1.17 },
+];
+function clubCategory(club) {
+  const k = clubOrderKey(club);
+  if (k === 0) return "driver";
+  if (k >= 1 && k < 3) return "wood";
+  if (k >= 3 && k < 4) return "iron";
+  if (k >= 4 && k < 5) return "wedge";
+  return null;
+}
+function smashGrade(s) {
+  if (s.smash == null || !isFinite(s.smash) || !s.clubSpeed) return null;
+  if (s.smash > 1.52) return { cls: "check", word: "Check" };
+  const band = SMASH_BANDS.find((b) => b.key === clubCategory(s.club));
+  if (!band) return null;
+  if (s.smash >= band.good) return { cls: "good", word: "Good" };
+  if (s.smash >= band.ok) return { cls: "ok", word: "OK" };
+  return { cls: "bad", word: "Poor" };
+}
+
+/* ---------- stat ratings: green / amber / red ---------- */
+function clubDetail(club) {
+  const k = clubOrderKey(club), s = club.toLowerCase();
+  let cat = null;
+  if (k === 0) cat = "driver"; else if (k >= 1 && k < 2) cat = "wood"; else if (k >= 2 && k < 3) cat = "hybrid";
+  else if (k >= 3 && k < 4) cat = "iron"; else if (k >= 4 && k < 5) cat = "wedge";
+  const m = s.match(/(\d+)\s*(iron|i\b)/); const n = m ? +m[1] : 7;
+  return { cat, n };
+}
+const pick = (cat, table) => (cat && table[cat]) || null;
+const win = (lo, hi, alo, ahi) => ({ lo, hi, alo, ahi });
+const sym = (c, g, a) => win(c - g, c + g, c - a, c + a);
+// club windows (degrees, rpm, seconds; apex in yards, converted below)
+const WINDOWS = {
+  launch: ({ cat, n }) => pick(cat, { driver: sym(13, 3, 6), wood: sym(12, 3, 6), hybrid: sym(14, 3, 6), iron: sym(8 + 1.6 * n, 3, 6), wedge: sym(27, 4, 8) }),
+  spin: ({ cat, n }) => { const c = 700 * n + 1400; return pick(cat, { driver: win(2000, 3000, 1600, 3600), wood: win(3000, 4500, 2500, 5200), hybrid: win(3800, 5200, 3200, 6000), iron: win(c * 0.85, c * 1.15, c * 0.7, c * 1.3), wedge: win(7500, 10000, 6000, 11500) }); },
+  apex: ({ cat }) => pick(cat, { driver: win(27, 38, 20, 45), wood: win(25, 35, 18, 42), hybrid: win(24, 35, 17, 42), iron: win(22, 34, 16, 40), wedge: win(22, 32, 15, 38) }),
+  // descent is estimated by this page's flight model, which lands a little flatter than launch-monitor figures
+  descent: ({ cat, n }) => pick(cat, { driver: win(30, 45, 24, 52), wood: win(34, 48, 28, 55), hybrid: win(37, 52, 31, 58), iron: n <= 5 ? win(37, 55, 31, 60) : win(40, 55, 34, 60), wedge: win(43, 58, 37, 62) }),
+  hang: ({ cat }) => pick(cat, { driver: win(5.5, 7.2, 4.5, 8), wood: win(5, 6.8, 4, 7.5), hybrid: win(4.8, 6.5, 4, 7.2), iron: win(4.8, 6.5, 4, 7.2), wedge: win(4.5, 6.2, 3.8, 7) }),
+  attack: ({ cat }) => pick(cat, { driver: win(-1, 5, -3, 7), wood: win(-4, 1, -6, 3), hybrid: win(-5, 0, -7, 2), iron: win(-6, -1, -8, 1), wedge: win(-7, -2, -9, 0) }),
+};
+// size of the miss, same for every club (absolute degrees)
+const ABS = { dir: [2, 5], axis: [6, 12], path: [3, 6], face: [2, 4], f2p: [2, 5] };
+// compared with your own average for the club (needs 3+ shots)
+const PERSONAL = { carry: [0.04, 0.08], total: [0.04, 0.08], ballSpeed: [0.04, 0.08], clubSpeed: [0.03, 0.06] };
+
+function inWin(v, w) { return v >= w.lo && v <= w.hi ? "good" : v >= w.alo && v <= w.ahi ? "ok" : "bad"; }
+function clubAverages(list) {
+  const by = {};
+  for (const s of list) {
+    const t = s.traj, a = (by[s.club] ??= { n: 0, carry: 0, total: 0, ballSpeed: 0, clubSpeed: 0, cs: 0 });
+    a.n++; a.carry += t.carry; a.total += Math.hypot(t.rollEnd.x, t.rollEnd.z); a.ballSpeed += s.ballSpeed;
+    if (s.clubSpeed) { a.clubSpeed += s.clubSpeed; a.cs++; }
+  }
+  for (const a of Object.values(by)) { a.carry /= a.n; a.total /= a.n; a.ballSpeed /= a.n; a.clubSpeed = a.cs ? a.clubSpeed / a.cs : null; }
+  return by;
+}
+// returns { key: "good" | "ok" | "bad" } for every stat that can be judged
+function rateShot(s, avgs) {
+  const t = s.traj, d = clubDetail(s.club), r = {};
+  const val = { launch: s.launch, spin: s.spin, apex: t.apex != null ? t.apex / YD : null, descent: t.descent, hang: t.flightTime, attack: s.attack };
+  for (const [k, f] of Object.entries(WINDOWS)) { const w = f(d); if (w && val[k] != null && isFinite(val[k])) r[k] = inWin(val[k], w); }
+  const absVal = { dir: s.dir, axis: s.axis, path: s.path, face: s.face, f2p: s.f2p };
+  for (const [k, [g, a]] of Object.entries(ABS)) { const v = absVal[k]; if (v != null && isFinite(v) && !(k !== "dir" && k !== "axis" && !s.clubSpeed)) r[k] = Math.abs(v) <= g ? "good" : Math.abs(v) <= a ? "ok" : "bad"; }
+  const off = Math.abs(t.land.z) / Math.max(1, t.carry);
+  r.offline = off <= 0.05 ? "good" : off <= 0.1 ? "ok" : "bad";
+  const avg = avgs && avgs[s.club];
+  if (avg && avg.n >= 3) {
+    const cur = { carry: t.carry, total: Math.hypot(t.rollEnd.x, t.rollEnd.z), ballSpeed: s.ballSpeed, clubSpeed: s.clubSpeed };
+    for (const [k, [g, a]] of Object.entries(PERSONAL)) {
+      if (!cur[k] || !avg[k]) continue;
+      const dv = Math.abs(cur[k] - avg[k]) / avg[k];
+      r[k] = dv <= g ? "good" : dv <= a ? "ok" : "bad";
+    }
+  }
+  const sg = smashGrade(s); if (sg && sg.cls !== "check") r.smash = sg.cls;
+  return r;
+}
+
+/* ---------- club shapes and typical numbers ---------- */
+const T100_LOFTS = { 3: 20, 4: 23, 5: 26, 6: 29, 7: 33, 8: 37, 9: 41, P: 45, W: 49 };
+const MY_DRIVER = { model: "Titleist TSR2", loft: 10, surefit: -0.75, shaft: "Fujikura Ventus Red 5-S" };
+function clubLoft(club) {
+  const d = clubDetail(club), s = club.toLowerCase(), m = s.match(/(\d+)/), k = m ? +m[1] : null;
+  const deg = s.match(/(\d{2})\s*°/); if (deg) return +deg[1];
+  // Darius's bag: TSR2 driver (10° head assumed) in SureFit D1 = −0.75° loft, standard lie
+  if (d.cat === "driver") return MY_DRIVER.loft + MY_DRIVER.surefit;
+  if (d.cat === "wood") return 15 + ((k ?? 3) - 3) * 1.5;
+  if (d.cat === "hybrid") return 19 + ((k ?? 3) - 3) * 3;
+  // Titleist T100 (2025) standard lofts
+  if (d.cat === "iron") return T100_LOFTS[d.n] ?? 21 + (d.n - 4) * 4;
+  if (d.cat === "wedge") return /sand|sw/.test(s) ? 56 : /lob|lw/.test(s) ? 60 : /gap|gw|aw|approach/.test(s) ? 50 : T100_LOFTS.P;
+  return 30;
+}
+function clubProfile(club) {
+  const d = clubDetail(club), s = club.toLowerCase(), m = s.match(/(\d+)/), k = m ? +m[1] : null;
+  switch (d.cat) {
+    case "driver": return { cs: 102, sm: 1.44, la: 13, sp: 2750, aoa: 1.5 };
+    case "wood": { const n = k ?? 3; return { cs: 97 - (n - 3) * 2, sm: 1.42, la: 11.5 + (n - 3) * 0.8, sp: 3600 + (n - 3) * 350, aoa: -1.5 }; }
+    case "hybrid": { const n = k ?? 4; return { cs: 92 - (n - 3) * 1.5, sm: 1.38, la: 13 + (n - 3) * 1.2, sp: 4300 + (n - 3) * 400, aoa: -2.5 }; }
+    case "iron": return { cs: 100 - 2 * d.n, sm: 1.36 - 0.012 * (d.n - 4), la: 8 + 1.6 * d.n, sp: 700 * d.n + 1400, aoa: -3.5 };
+    case "wedge":
+      if (/sand|sw/.test(s)) return { cs: 75, sm: 1.14, la: 31, sp: 9800, aoa: -5 };
+      if (/lob|lw/.test(s)) return { cs: 72, sm: 1.1, la: 34, sp: 10000, aoa: -5.5 };
+      if (/gap|gw|aw|approach/.test(s)) return { cs: 77, sm: 1.16, la: 28.5, sp: 9200, aoa: -4.8 };
+      return { cs: 79, sm: 1.19, la: 26.5, sp: 8600, aoa: -4.5 };
+    default: return { cs: 86, sm: 1.3, la: 18.5, sp: 6400, aoa: -3.5 };
+  }
+}
+// a believable shot for a club (sample data and "Simulate a shot")
+function genShot(club, rnd = Math.random) {
+  const gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += rnd(); return (s - 2) * 0.85; };
+  const pr = clubProfile(club);
+  const clubSpeed = (pr.cs + gauss() * 2.2) * MPH, smash = Math.min(1.5, pr.sm + gauss() * 0.03);
+  const path = 1.5 + gauss() * 2.5, face = path + 0.8 + gauss() * 2.6;
+  const s = {
+    club, clubSpeed, ballSpeed: clubSpeed * smash, smash,
+    attack: pr.aoa + gauss() * 1.2, path, face, f2p: face - path,
+    launch: pr.la + gauss() * 1.6, dir: 0.75 * face + 0.25 * path, spin: pr.sp + gauss() * pr.sp * 0.08,
+    axis: (face - path) * 2.2 + gauss() * 1.5, apex: null, carry: null, carryDev: null, total: null, totalDev: null,
+  };
+  const f = simulateFlight(s);
+  s.carry = f.carry; s.carryDev = f.side; s.apex = f.apex;
+  const roll = estimateRoll(f, club), ang = Math.atan2(f.side, f.carry);
+  const end = [f.carry * Math.cos(ang) + roll * Math.cos(ang + (s.axis || 0) * 0.004), f.side + roll * Math.sin(ang)];
+  s.total = Math.hypot(end[0], end[1]); s.totalDev = end[1];
+  return s;
+}
+
+/* ---------- 3D range ---------- */
+const stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const FOG = new THREE.Color("#2b3550");
+scene.fog = new THREE.Fog(FOG, 140, 520);
+const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 2000);
+
+// sky dome
+{
+  const g = new THREE.SphereGeometry(900, 32, 16);
+  const m = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color("#0c1630") }, mid: { value: new THREE.Color("#3a4a78") }, hor: { value: new THREE.Color("#f0a066") } },
+    vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+    fragmentShader: "uniform vec3 top; uniform vec3 mid; uniform vec3 hor; varying vec3 vP; void main(){ float h = vP.y; vec3 c = mix(hor, mid, smoothstep(-0.02, 0.18, h)); c = mix(c, top, smoothstep(0.18, 0.7, h)); gl_FragColor = vec4(c,1.0); }",
+  });
+  scene.add(new THREE.Mesh(g, m));
+}
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x23351f, 0.75));
+const sun = new THREE.DirectionalLight(0xffd2a1, 0.9); sun.position.set(-120, 60, -160); scene.add(sun);
+const flood = new THREE.DirectionalLight(0xe8f0ff, 0.45); flood.position.set(-20, 40, 30); scene.add(flood);
+
+// turf with mowing stripes
+function turfTexture() {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 256;
+  const x = c.getContext("2d");
+  x.fillStyle = "#2f6b33"; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = "#357a3a"; x.fillRect(0, 0, 128, 256);
+  const img = x.getImageData(0, 0, 256, 256);
+  for (let i = 0; i < img.data.length; i += 4) { const n = (Math.random() - 0.5) * 18; img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n * 0.5; }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(70, 30); t.anisotropy = 8; t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+{
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 600), new THREE.MeshLambertMaterial({ map: turfTexture() }));
+  ground.rotation.x = -Math.PI / 2; ground.position.x = 500; scene.add(ground);
+  // rough either side
+  const roughM = new THREE.MeshLambertMaterial({ color: "#244f28" });
+  for (const side of [-1, 1]) { const r = new THREE.Mesh(new THREE.PlaneGeometry(1400, 400), roughM); r.rotation.x = -Math.PI / 2; r.position.set(500, 0.01, side * 260); scene.add(r); }
+  // hitting bay mat
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(3, 2.2), new THREE.MeshLambertMaterial({ color: "#3f8a45" }));
+  mat.rotation.x = -Math.PI / 2; mat.position.set(-0.6, 0.02, 0); scene.add(mat);
+  const tee = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.008, 0.06, 8), new THREE.MeshLambertMaterial({ color: "#f4f1e8" }));
+  tee.position.set(0, 0.03, 0); scene.add(tee);
+}
+
+function textSprite(txt, color = "#ffffff", scale = 6) {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 128;
+  const x = c.getContext("2d");
+  x.font = "700 84px 'Barlow Condensed', 'Arial Narrow', sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+  x.lineWidth = 10; x.strokeStyle = "rgba(10,16,28,0.75)"; x.strokeText(txt, 128, 66); x.fillStyle = color; x.fillText(txt, 128, 66);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, fog: true }));
+  s.scale.set(scale, scale / 2, 1); return s;
+}
+
+// distance markers, target greens, tree line — rebuilt when units change
+const markers = new THREE.Group(); scene.add(markers);
+function buildMarkers() {
+  markers.clear();
+  const step = units === "yd" ? 50 * YD : 50, n = 6;
+  const flagColors = ["#ff5a4f", "#ffffff", "#3a8dff", "#ffd23f", "#ff5a4f", "#ffffff"];
+  const lineM = new THREE.MeshBasicMaterial({ color: "#d9f2dc", transparent: true, opacity: 0.18, depthWrite: false });
+  for (let i = 1; i <= n; i++) {
+    const x = step * i;
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 160), lineM); line.rotation.x = -Math.PI / 2; line.position.set(x, 0.03, 0); markers.add(line);
+    for (const z of [-34, 34]) {
+      const sign = textSprite(String(50 * i), "#ffffff", 7); sign.position.set(x, 3.2, z); markers.add(sign);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.2, 0.2), new THREE.MeshLambertMaterial({ color: "#e9eef5" })); post.position.set(x, 1.1, z); markers.add(post);
+    }
+  }
+  const greenM = new THREE.MeshLambertMaterial({ color: "#4fae57" });
+  const ringM = new THREE.MeshBasicMaterial({ color: "#e9f7e6", transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+  [[1.5, -8, 9], [2.5, 6, 11], [3.5, -4, 13], [4.5, 10, 15]].forEach(([k, z, r], i) => {
+    const x = step * k;
+    const g = new THREE.Mesh(new THREE.CircleGeometry(r, 48), greenM); g.rotation.x = -Math.PI / 2; g.position.set(x, 0.04, z); markers.add(g);
+    for (const rr of [r * 0.33, r * 0.66]) { const ring = new THREE.Mesh(new THREE.RingGeometry(rr - 0.12, rr, 48), ringM); ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.05, z); markers.add(ring); }
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 6), new THREE.MeshLambertMaterial({ color: "#f5f5f0" })); pole.position.set(x, 1.6, z); markers.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), new THREE.MeshLambertMaterial({ color: flagColors[i], side: THREE.DoubleSide })); flag.position.set(x, 2.75, z + 0.72); flag.rotation.y = Math.PI / 2; markers.add(flag);
+  });
+}
+// trees
+{
+  const geo = new THREE.ConeGeometry(4, 13, 7), trunk = new THREE.CylinderGeometry(0.5, 0.6, 3, 6);
+  const mat = new THREE.MeshLambertMaterial({ color: "#1d3a26" }), tm = new THREE.MeshLambertMaterial({ color: "#3b2a1e" });
+  const spots = [];
+  let sd = 11; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  for (let x = 20; x < 400; x += 7) for (const side of [-1, 1]) spots.push([x + r() * 5, side * (78 + r() * 30), 0.7 + r() * 0.7]);
+  for (let z = -120; z <= 120; z += 6) spots.push([360 + r() * 30, z + r() * 4, 0.9 + r() * 0.8]);
+  const im = new THREE.InstancedMesh(geo, mat, spots.length), it = new THREE.InstancedMesh(trunk, tm, spots.length);
+  const o = new THREE.Object3D();
+  spots.forEach(([x, z, s], i) => { o.position.set(x, 6.5 * s + 2 * s, z); o.scale.set(s, s, s); o.updateMatrix(); im.setMatrixAt(i, o.matrix); o.position.set(x, 1.5 * s, z); o.updateMatrix(); it.setMatrixAt(i, o.matrix); });
+  scene.add(im, it);
+}
+
+// ball + shadow
+const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 14), new THREE.MeshBasicMaterial({ color: "#ffffff", fog: false }));
+const glow = new THREE.Sprite(new THREE.SpriteMaterial({ color: "#ffe2b3", transparent: true, opacity: 0.55, depthWrite: false, fog: false, map: (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const x = c.getContext("2d"); const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })() }));
+glow.scale.set(1.4, 1.4, 1); ball.add(glow);
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.35, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2;
+scene.add(ball, shadow);
+
+const tracerGroup = new THREE.Group(); scene.add(tracerGroup);
+const historyGroup = new THREE.Group(); scene.add(historyGroup);
+let tracerMesh = null, tracerSegs = 0;
+
+/* ---------- state ---------- */
+let shots = [], view = [], cur = 0, filter = "All", source = "Sample session", isSample = true;
+const BAG = [
+  ["Woods", ["Driver", "3 Wood", "5 Wood", "7 Wood"]],
+  ["Hybrids", ["3 Hybrid", "4 Hybrid", "5 Hybrid"]],
+  ["Irons", ["4 Iron", "5 Iron", "6 Iron", "7 Iron", "8 Iron", "9 Iron"]],
+  ["Wedges", ["Pitching Wedge", "Gap Wedge", "Sand Wedge", "Lob Wedge"]],
+];
+let currentClub = "7 Iron";
+try { const c = localStorage.getItem("r10-club"); if (c) currentClub = c; } catch (e) {}
+const LIVE_KEY = "r10-live-shots";
+let isLive = false, liveShots = [];
+let camMode = "broadcast";
+try { const c = localStorage.getItem("r10-cam"); if (["broadcast", "chase", "tee", "top", "free"].includes(c)) camMode = c; } catch (e) {}
+let anim = null; // {traj, t0, phase}
+let playAll = false;
+const clubColor = {};
+
+function setShots(list, name, sample, opts = {}) {
+  shots = list.map((s, i) => ({ ...s, idx: i + 1 }));
+  const clubs = [...new Set(shots.map((s) => s.club))].sort((a, b) => clubOrderKey(a) - clubOrderKey(b));
+  clubs.forEach((c, i) => (clubColor[c] = CLUB_COLORS[i % CLUB_COLORS.length]));
+  shots.forEach((s) => (s.traj = buildTrajectory(s)));
+  source = name; isSample = sample; filter = opts.filter || "All"; isLive = !!opts.live;
+  const src = document.getElementById("src"); src.textContent = name; src.classList.toggle("sample", sample);
+  renderFilters(); applyFilter(); select(view.length - 1, true);
+}
+
+function applyFilter() {
+  view = filter === "All" ? shots : shots.filter((s) => s.club === filter);
+  renderStrip(); buildHistory();
+}
+
+function renderFilters() {
+  const el = document.getElementById("filters"); el.innerHTML = "";
+  const clubs = [...new Set(shots.map((s) => s.club))].sort((a, b) => clubOrderKey(a) - clubOrderKey(b));
+  const mk = (label, key, color, avg) => {
+    const b = document.createElement("button"); b.className = "filter"; b.setAttribute("aria-pressed", String(filter === key));
+    b.innerHTML = (color ? `<span class="dot" style="background:${color}"></span>` : "") + `<span>${label}</span>` + (avg != null ? `<span class="avg">${fmt(dist(avg))}</span>` : "");
+    b.onclick = () => { filter = key; renderFilters(); applyFilter(); select(view.length - 1, true); ddOpen("filter-dd", false); };
+    el.appendChild(b);
+  };
+  mk("All clubs", "All");
+  document.getElementById("filter-label").innerHTML = filter === "All" ? "All clubs" : `<span class="dot" style="background:${clubColor[filter] || "var(--ink-dim)"}"></span> ${filter}`;
+  for (const c of clubs) { const cs = shots.filter((s) => s.club === c); mk(c, c, clubColor[c], cs.reduce((a, s) => a + s.traj.carry, 0) / cs.length); }
+}
+
+function renderStrip() {
+  const el = document.getElementById("strip"); el.innerHTML = "";
+  view.forEach((s, i) => {
+    const b = document.createElement("button"); b.className = "chip"; b.setAttribute("role", "listitem");
+    b.innerHTML = `<span class="n"><i style="background:${clubColor[s.club]}"></i>#${s.idx} ${shortClub(s.club)}</span><span class="d">${fmt(dist(s.traj.carry))}</span><span class="sm ${smashGrade(s)?.cls || ""}" title="Smash ${fmt(s.smash, 2)}"></span>`;
+    b.onclick = () => { playAll = false; syncPlayAll(); select(i, true); };
+    el.appendChild(b);
+  });
+}
+function shortClub(c) {
+  return c.replace(/Driver/i, "Dr").replace(/(\d+)\s*Iron/i, "$1i").replace(/(\d+)\s*Wood/i, "$1w").replace(/(\d+)\s*Hybrid/i, "$1h").replace(/Pitching Wedge/i, "PW").replace(/Gap Wedge|Approach Wedge/i, "GW").replace(/Sand Wedge/i, "SW").replace(/Lob Wedge/i, "LW");
+}
+
+function buildHistory() {
+  historyGroup.clear();
+  for (const s of view) {
+    const col = new THREE.Color(clubColor[s.club]);
+    const pts = s.traj.pts.filter((_, i) => i % 6 === 0).concat([s.traj.land]).map((q) => new THREE.Vector3(q.x, q.y, q.z));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.22, depthWrite: false }));
+    line.userData.shot = s; historyGroup.add(line);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.9, 18), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85, depthWrite: false }));
+    dot.rotation.x = -Math.PI / 2; dot.position.set(s.traj.rollEnd.x, 0.06, s.traj.rollEnd.z); dot.userData.shot = s; historyGroup.add(dot);
+  }
+}
+
+function syncHistoryHighlight(s) {
+  historyGroup.children.forEach((o) => {
+    const on = o.userData.shot === s;
+    if (o.isLine) o.material.opacity = on ? 0 : 0.22;
+    else { o.material.opacity = on ? 1 : 0.6; o.scale.setScalar(on ? 1.5 : 1); }
+  });
+}
+
+/* ---------- stat card ---------- */
+let shapeRefOpen = false;
+function renderShapeRef(cur) {
+  const rows = [["pull", "Starts " + (lefty ? "right" : "left")], ["", "Starts straight"], ["push", "Starts " + (lefty ? "left" : "right")]];
+  const curves = [[3, "L"], [2, "L"], [1, "L"], [0, ""], [1, "R"], [2, "R"], [3, "R"]];
+  document.getElementById("shape-grid").innerHTML = rows.map(([start, label]) =>
+    `<div class="shape-row"><span>${label}</span><div>` + curves.map(([lvl, side]) => {
+      const sp = { start, lvl, side }, now = cur && cur.start === start && cur.lvl === lvl && cur.side === side;
+      return `<span class="pill ${shapeQuality(sp)}${now ? " now" : ""}">${shapeName(sp)}</span>`;
+    }).join("") + `</div></div>`).join("");
+  document.getElementById("shape-ref").hidden = !shapeRefOpen;
+  document.getElementById("c-shape").setAttribute("aria-expanded", String(shapeRefOpen));
+  document.getElementById("hand-r").setAttribute("aria-pressed", String(!lefty));
+  document.getElementById("hand-l").setAttribute("aria-pressed", String(lefty));
+}
+document.getElementById("c-shape").addEventListener("click", () => { shapeRefOpen = !shapeRefOpen; if (view[cur]) renderCard(view[cur]); });
+function setHand(l) { lefty = l; try { localStorage.setItem("r10-hand", l ? "L" : "R"); } catch (e) {} if (view[cur]) renderCard(view[cur]); }
+document.getElementById("hand-r").addEventListener("click", () => setHand(false));
+document.getElementById("hand-l").addEventListener("click", () => setHand(true));
+let smashRefOpen = false;
+function smashStat(s) {
+  const g = smashGrade(s);
+  const r = ratings.smash;
+  return `<div class="stat${r ? " r-" + r : ""}"><dt>Smash<button class="info-dot" id="smash-info" aria-expanded="${smashRefOpen}" aria-controls="smash-ref" aria-label="Show smash factor guide">i</button></dt><dd class="smash-dd">${fmt(s.smash, 2)}${g ? `<span class="grade ${g.cls}">${g.word}</span>` : ""}</dd></div>`;
+}
+function renderSmashRef(s) {
+  const cat = s ? clubCategory(s.club) : null;
+  document.getElementById("smash-rows").innerHTML = SMASH_BANDS.map((b) =>
+    `<tr class="${b.key === cat ? "mine" : ""}"><td>${b.label}</td><td class="g">${b.good.toFixed(2)}+</td><td class="o">${b.ok.toFixed(2)}–${(b.good - 0.01).toFixed(2)}</td><td class="b">&lt; ${b.ok.toFixed(2)}</td></tr>`).join("");
+  document.getElementById("smash-ref").hidden = !smashRefOpen;
+}
+document.getElementById("card").addEventListener("click", (e) => {
+  const ref = e.target.closest("[data-ref]");
+  if (ref) { statRefKey = statRefKey === ref.dataset.ref ? null : ref.dataset.ref; if (view[cur]) renderCard(view[cur]); return; }
+  if (e.target.closest("#smash-info")) { smashRefOpen = !smashRefOpen; e.target.closest("#smash-info").setAttribute("aria-expanded", String(smashRefOpen)); renderSmashRef(view[cur]); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && statRefKey) { statRefKey = null; if (view[cur]) renderCard(view[cur]); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && shapeRefOpen) { shapeRefOpen = false; if (view[cur]) renderCard(view[cur]); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && smashRefOpen) { smashRefOpen = false; renderSmashRef(view[cur]); const b = document.getElementById("smash-info"); if (b) b.setAttribute("aria-expanded", "false"); } });
+/* ---------- impact view (spin / top / side / flight) ---------- */
+const BALL_C = "#ffb347", CLUB_C = "#6fb8ff";
+const lr = (v, d = 1) => (v == null || !isFinite(v) ? "—" : Math.abs(v) < 0.05 ? (0).toFixed(d) : Math.abs(v).toFixed(d) + (v > 0 ? "R" : "L"));
+const lrDeg = (v, d = 1) => (v == null || !isFinite(v) ? "—" : Math.abs(v) < 0.05 ? (0).toFixed(d) + "°" : Math.abs(v).toFixed(d) + "°" + (v > 0 ? "R" : "L"));
+const vec = (deg, len) => [Math.sin(deg * D2R) * len, -Math.cos(deg * D2R) * len];
+function ival(key, label, value, unit, color, right) {
+  const r = ratings[key];
+  return `<div class="ival${right ? " right" : ""}"><span class="k"><i style="background:${color}"></i>${label}</span><span class="v">${right && r ? `<b class="${r}" title="Rated"></b>` : ""}${value}${unit && value !== "—" ? `<small>${unit}</small>` : ""}${!right && r ? `<b class="${r}"></b>` : ""}</span></div>`;
+}
+function arrowHead(x, y, deg, color, size = 7) {
+  const [ax, ay] = vec(deg + 150, size), [bx, by] = vec(deg - 150, size);
+  return `<path d="M${x} ${y} L${x + ax} ${y + ay} L${x + bx} ${y + by} Z" fill="${color}"/>`;
+}
+const HEAD_FILL = "#20262f", HEAD_EDGE = "#4a5563", SHAFT = "#7b8594";
+function headDims(cat) {
+  return ({ driver: { W: 92, D: 56, wood: true }, wood: { W: 78, D: 40, wood: true }, hybrid: { W: 70, D: 30, wood: true }, iron: { W: 84, D: 14 }, wedge: { W: 78, D: 16 } })[cat] || { W: 84, D: 14 };
+}
+// top view, before face rotation; face line sits at y = f
+function headTop(cat, cx, f) {
+  const { W, D, wood } = headDims(cat), l = cx - W / 2, r = cx + W / 2;
+  const body = wood
+    ? `<path d="M${l} ${f} Q${l - 2} ${f + D * 0.95} ${cx} ${f + D} Q${r + 2} ${f + D * 0.95} ${r} ${f} Z" fill="${HEAD_FILL}" stroke="${HEAD_EDGE}"/>`
+    : `<path d="M${l} ${f} L${r} ${f} Q${r + 4} ${f + D} ${r - 9} ${f + D} L${l + 6} ${f + D * 0.75} Z" fill="${HEAD_FILL}" stroke="${HEAD_EDGE}"/><line x1="${l + 10}" y1="${f + D * 0.45}" x2="${r - 12}" y2="${f + D * 0.55}" stroke="${HEAD_EDGE}"/>`;
+  const hosel = wood
+    ? `<line x1="${l + 4}" y1="${f + 6}" x2="${l - 24}" y2="${f + 14}" stroke="${SHAFT}" stroke-width="5" stroke-linecap="round"/>`
+    : `<line x1="${l + 2}" y1="${f + 3}" x2="${l - 28}" y2="${f + 10}" stroke="${SHAFT}" stroke-width="5" stroke-linecap="round"/>`;
+  return body + hosel + `<line x1="${l - 2}" y1="${f}" x2="${r + 2}" y2="${f}" stroke="${CLUB_C}" stroke-width="3" stroke-linecap="round"/>`;
+}
+// side view: face leans back by the club's loft; ground at gy + 12
+function headSide(cat, loft, gx, gy) {
+  const fb = [gx - 13, gy + 11], wood = headDims(cat).wood;
+  const H = cat === "driver" ? 34 : wood ? 25 : cat === "wedge" ? 30 : 28;
+  const ft = [fb[0] - H * Math.sin(loft * D2R), fb[1] - H * Math.cos(loft * D2R)];
+  let body, shaft;
+  if (wood) {
+    const Lb = cat === "driver" ? 72 : cat === "wood" ? 54 : 42;
+    body = `<path d="M${fb[0]} ${fb[1]} L${ft[0]} ${ft[1]} C${ft[0] - Lb * 0.5} ${ft[1] - 4} ${fb[0] - Lb} ${ft[1] + 2} ${fb[0] - Lb} ${fb[1] - H * 0.35} Q${fb[0] - Lb * 0.6} ${fb[1] + 1} ${fb[0]} ${fb[1]} Z" fill="${HEAD_FILL}" stroke="${HEAD_EDGE}"/>`;
+    const sx = fb[0] - Lb * 0.55; shaft = `<line x1="${sx}" y1="${ft[1] + 2}" x2="${sx - 20}" y2="10" stroke="${SHAFT}" stroke-width="4" stroke-linecap="round"/>`;
+  } else {
+    body = `<path d="M${fb[0]} ${fb[1]} L${ft[0]} ${ft[1]} L${ft[0] - 8} ${ft[1] + 2} L${fb[0] - 30} ${fb[1] - 11} Q${fb[0] - 35} ${fb[1]} ${fb[0] - 25} ${fb[1] + 1} Z" fill="${HEAD_FILL}" stroke="${HEAD_EDGE}"/>`;
+    shaft = `<line x1="${ft[0] - 2}" y1="${ft[1]}" x2="${ft[0] - 20}" y2="10" stroke="${SHAFT}" stroke-width="4" stroke-linecap="round"/>`;
+  }
+  return shaft + body + `<line x1="${fb[0]}" y1="${fb[1]}" x2="${ft[0]}" y2="${ft[1]}" stroke="${CLUB_C}" stroke-width="2.5" stroke-linecap="round"/>`;
+}
+
+function renderImpact(s) {
+  const t = s.traj, EX = 3; // top-view angles exaggerated so 1–3° is visible
+  const sp = s.spin, ax = s.axis ?? 0;
+  const back = sp != null ? sp * Math.cos(ax * D2R) : null, side = sp != null ? sp * Math.sin(ax * D2R) : null;
+  const total = t ? Math.hypot(t.rollEnd.x, t.rollEnd.z) : null;
+  const ex = (a) => clamp((a ?? 0) * EX, -45, 45);
+  const cat = clubDetail(s.club || "").cat || "iron", loft = clubLoft(s.club || "7 Iron");
+
+  // spin: ball with backspin arrow and tilted spin axis
+  const tilt = clamp(ax, -40, 40);
+  const spinSvg = `<svg class="idiag" viewBox="0 0 280 70" aria-hidden="true">
+    <g transform="rotate(${tilt} 140 35)"><line x1="70" y1="35" x2="210" y2="35" stroke="${BALL_C}" stroke-width="2"/></g>
+    <circle cx="140" cy="35" r="22" fill="#f4f1ea"/><circle cx="133" cy="28" r="6" fill="#fff" opacity="0.7"/>
+    <path d="M152 15 A22 22 0 0 0 120 18" fill="none" stroke="${BALL_C}" stroke-width="2.5"/>${arrowHead(120, 18, 235, BALL_C, 6)}
+  </svg>`;
+
+  // top view: target is up; blue = club, orange = ball
+  const cx = 140, cy = 112;
+  const [px, py] = vec(ex(s.path), 80), [lx, ly] = vec(ex(s.dir), 92);
+  const fa = ex(s.face);
+  const topSvg = `<svg class="idiag" viewBox="0 0 280 200" aria-hidden="true">
+    <line x1="${cx}" y1="196" x2="${cx}" y2="8" stroke="var(--ink-dim)" stroke-width="1" stroke-dasharray="3 4" opacity="0.6"/>
+    <line x1="20" y1="${cy}" x2="260" y2="${cy}" stroke="var(--ink-dim)" stroke-width="1" opacity="0.35"/>
+    <g transform="rotate(${fa} ${cx} ${cy})">${headTop(cat, cx, cy + 14)}</g>
+    ${s.path != null ? `<line x1="${cx - px}" y1="${cy - py}" x2="${cx + px * 0.85}" y2="${cy + py * 0.85}" stroke="${CLUB_C}" stroke-width="2.5"/>${arrowHead(cx + px * 0.85, cy + py * 0.85, ex(s.path), CLUB_C, 6)}` : ""}
+    ${s.dir != null ? `<line x1="${cx}" y1="${cy}" x2="${cx + lx}" y2="${cy + ly}" stroke="${BALL_C}" stroke-width="2.5"/>${arrowHead(cx + lx, cy + ly, ex(s.dir), BALL_C)}` : ""}
+    <circle cx="${cx}" cy="${cy}" r="12" fill="#f4f1ea"/>
+    <text x="${cx + 6}" y="16" fill="var(--ink-dim)" font-size="10" font-family="Barlow, sans-serif">target</text>
+  </svg>`;
+
+  // side view: ground, club coming in at attack angle, launch wedge
+  const gx = 168, gy = 118, la = clamp(s.launch ?? 0, 0, 60), aoa = clamp(s.attack ?? 0, -15, 15);
+  const L = 92, lx2 = gx + Math.cos(la * D2R) * L, ly2 = gy - Math.sin(la * D2R) * L;
+  const aoaD = clamp(aoa * 2, -30, 30), ax0 = gx - Math.cos(aoaD * D2R) * 120, ay0 = gy + Math.sin(aoaD * D2R) * 120;
+  const sideSvg = `<svg class="idiag" viewBox="0 0 280 140" aria-hidden="true">
+    <line x1="10" y1="${gy + 12}" x2="270" y2="${gy + 12}" stroke="var(--ink-dim)" stroke-width="1" opacity="0.5"/>
+    ${s.launch != null ? `<path d="M${gx} ${gy} L${gx + L} ${gy} L${lx2} ${ly2} Z" fill="${BALL_C}" opacity="0.22"/>
+    <line x1="${gx}" y1="${gy}" x2="${lx2}" y2="${ly2}" stroke="${BALL_C}" stroke-width="2.5"/>${arrowHead(lx2, ly2, 90 - la, BALL_C)}` : ""}
+    ${headSide(cat, loft, gx, gy)}
+    ${s.attack != null ? `<line x1="${ax0}" y1="${ay0}" x2="${gx - 14}" y2="${gy - Math.sin(aoaD * D2R) * 14}" stroke="${CLUB_C}" stroke-width="2.5"/>${arrowHead(gx - 14, gy - Math.sin(aoaD * D2R) * 14, 90 - aoaD, CLUB_C, 6)}` : ""}
+    <circle cx="${gx}" cy="${gy}" r="12" fill="#f4f1ea"/>
+  </svg>`;
+
+  const html = `
+    <section class="isec"><h4>Spin</h4>
+      <div class="ivals">${ival("spin", "Backspin", fmt(back), "rpm", BALL_C)}${ival("axis", "Sidespin", side == null ? "—" : lr(side, 0), "rpm", BALL_C, true)}</div>
+      ${spinSvg}
+    </section>
+    <section class="isec"><h4>Top</h4>
+      <div class="ivals">${ival("f2p", "Face to path", lrDeg(s.f2p), "", CLUB_C)}${ival("dir", "Launch direction", lrDeg(s.dir), "", BALL_C, true)}</div>
+      ${topSvg}
+      <div class="ivals">${ival("path", "Club path", lrDeg(s.path), "", CLUB_C)}${ival("face", "Club face", lrDeg(s.face), "", CLUB_C, true)}</div>
+      <p class="inote">Angles drawn ${EX}× larger so small differences show.</p>
+    </section>
+    <section class="isec"><h4>Side</h4>
+      <div class="ivals">${ival("attack", "Attack angle", io(s.attack), "°", CLUB_C)}${ival("launch", "Launch angle", fmt(s.launch, 1), "°", BALL_C, true)}</div>
+      ${sideSvg}
+      <p class="inote">Attack angle drawn 2× larger.</p>
+    </section>
+    <section class="isec"><h4>Ball flight</h4>
+      <div class="ivals three">${ival("total", "Total", fmt(dist(total)), dUnit(), BALL_C)}${ival("carry", "Carry", fmt(dist(t?.carry)), dUnit(), BALL_C)}${ival("offline", "Deviation", lr(dist(t?.rollEnd.z), 0), dUnit(), BALL_C)}</div>
+    </section>`;
+  document.getElementById("impact-body").innerHTML = html;
+  if (statsMode) document.getElementById("sp-impact-body").innerHTML = html;
+  document.getElementById("i-mini").textContent = `Face ${lrDeg(s.face)} · Path ${lrDeg(s.path)}`;
+}
+
+/* ---------- stats-only page ---------- */
+let statsMode = false;
+function renderStatsPage(s) {
+  if (!statsMode) return;
+  if (!s.traj) {
+    document.getElementById("sp-club").textContent = s.club; document.getElementById("sp-no").textContent = "No shots yet";
+    document.getElementById("sp-shape").textContent = "—"; document.getElementById("sp-shape").className = "shape";
+    document.getElementById("sp-body").innerHTML = `<p class="empty-note">No shots with the ${s.club} yet. Hit one and it's saved here under this club.</p>`;
+    return;
+  }
+  const t = s.traj, total = Math.hypot(t.rollEnd.x, t.rollEnd.z), sp = shapeParts(s);
+  const back = s.spin != null ? s.spin * Math.cos((s.axis ?? 0) * D2R) : null, side = s.spin != null ? s.spin * Math.sin((s.axis ?? 0) * D2R) : null;
+  const angOf = (z, x) => Math.atan2(z, x) / D2R;
+  document.getElementById("sp-club").textContent = s.club;
+  document.getElementById("sp-club").style.color = clubColor[s.club];
+  document.getElementById("sp-no").textContent = `Shot ${s.idx} of ${shots.length}` + (s.sample ? " · sample" : "");
+  const tag = document.getElementById("sp-shape"); tag.textContent = shapeName(sp); tag.className = "shape " + shapeQuality(sp);
+  const du = units === "yd" ? "yds" : "m";
+  const cell = (key, label, value, est, extra = "") => {
+    const r = key && ratings[key];
+    return `<div class="sp-cell${r ? " r-" + r : ""}${est ? " est" : ""}${extra ? " " + extra : ""}"><span class="k">${r ? "<i></i>" : ""}${label}</span><span class="v">${value}</span></div>`;
+  };
+  const groups = [
+    ["Distance", [
+      cell("total", `Total distance (${du})`, fmt(dist(total)), t.est.total),
+      cell("carry", `Carry distance (${du})`, fmt(dist(t.carry))),
+      cell(null, "Total deviation", lrDeg(angOf(t.rollEnd.z, t.rollEnd.x)), false, "dev-angle"),
+      cell(null, `Total deviation (${du})`, lr(dist(t.rollEnd.z), 0)),
+      cell(null, "Carry deviation", lrDeg(angOf(t.land.z, t.land.x)), false, "dev-angle"),
+      cell("offline", `Carry deviation (${du})`, lr(dist(t.land.z), 0)),
+    ]],
+    ["Speed", [
+      cell("clubSpeed", `Club speed (${sUnit()})`, fmt(spd(s.clubSpeed))),
+      cell("ballSpeed", `Ball speed (${sUnit()})`, fmt(spd(s.ballSpeed))),
+      cell("smash", "Smash factor", fmt(s.smash, 2)),
+    ]],
+    ["Launch", [
+      cell("launch", "Launch angle", fmt(s.launch, 1) + "°"),
+      cell("dir", "Launch direction", lrDeg(s.dir)),
+      cell("apex", `Apex (${hUnit()})`, fmt(height(t.apex)), t.est.apex),
+      cell("descent", "Descent angle", fmt(t.descent, 0) + "°", true),
+      cell("hang", "Hang time (s)", fmt(t.flightTime, 1), true),
+    ]],
+    ["Club", [
+      cell("face", "Club face", lrDeg(s.face)),
+      cell("path", "Club path", lrDeg(s.path)),
+      cell("f2p", "Face to path", lrDeg(s.f2p)),
+      cell("attack", "Attack angle", io(s.attack) + "°"),
+    ]],
+    ["Spin", [
+      cell("spin", "Spin rate (rpm)", fmt(s.spin)),
+      cell("axis", "Spin axis", lrDeg(s.axis)),
+      cell(null, "Backspin (rpm)", fmt(back)),
+      cell(null, "Sidespin (rpm)", side == null ? "—" : lr(side, 0)),
+    ]],
+  ];
+  document.getElementById("sp-body").innerHTML = groups.map(([h, cells]) => `<section class="sp-group"><h3>${h}</h3><div class="sp-grid">${cells.join("")}</div></section>`).join("").replace(/—°/g, "—");
+}
+let userWantsStats = false;
+function setMode(stats, persist = true) {
+  if (persist) userWantsStats = stats;
+  statsMode = stats;
+  document.body.classList.toggle("stats-mode", stats);
+  document.getElementById("statpage").hidden = !stats;
+  document.getElementById("mode-visual").setAttribute("aria-pressed", String(!stats));
+  document.getElementById("mode-stats").setAttribute("aria-pressed", String(stats));
+  document.getElementById("mode-label").textContent = stats ? "Stats" : "Visual";
+  if (typeof ddOpen === "function") ddOpen("mode-dd", false);
+  if (persist) { try { localStorage.setItem("r10-mode", stats ? "stats" : "visual"); } catch (e) {} }
+  const want = stats ? "#stats" : "#visual";
+  try { if (location.hash !== want) history.replaceState(null, "", want); } catch (e) {}
+  if (view[cur]) { renderCard(view[cur]); } else if (shots) { renderEmpty(filter === "All" ? currentClub : filter); }
+  if (!stats) resize();
+  checkDock();
+}
+
+let ratings = {};
+// stats that get a Good / OK / Poor tag and an "i" guide, like smash factor
+const GUIDE = {
+  launch: ["Launch angle", "Should suit the club: low for the driver, higher through the irons, highest with wedges. Too low costs carry; too high balloons and falls short."],
+  spin: ["Spin rate", "Enough backspin keeps the ball in the air and stops it on the green. Too little drops out of the sky; too much balloons and loses distance."],
+  axis: ["Spin axis", "How far the spin is tilted. Near 0° flies straight; tilted right (+) curves right, tilted left (−) curves left. Bigger tilt, bigger curve."],
+  descent: ["Descent angle", "How steeply the ball comes down. Steeper landings stop faster on greens; shallow landings run out. Estimated by this page."],
+  hang: ["Hang time", "Seconds in the air. Follows from launch and spin: very short means a low flight, very long means it ballooned. Estimated by this page."],
+  attack: ["Attack angle", "Whether the club moves up or down at impact. Driver: hit slightly up on it. Irons and wedges: hit down on the ball, taking turf after it."],
+  path: ["Club path", "The direction the club travels through impact. Near 0° is neutral; + is in-to-out (draw path), − is out-to-in (fade/slice path)."],
+  apex: ["Apex", "The peak height of the flight. High enough to carry and land softly; too low runs out and won't hold greens, too high usually means too much spin and lost distance."],
+  dir: ["Launch direction", "Where the ball starts compared with your target line, mostly set by the club face. Near 0° starts it on line; R starts right, L starts left."],
+  f2p: ["Face to path", "Face angle minus club path, and the main cause of curve. Near 0° flies straight; R (+) curves right, L (−) curves left."],
+};
+const GRADE_WORD = { good: "Good", ok: "OK", bad: "Poor" };
+let statRefKey = null;
+function rstat(key, label, value, unit, cls = "") {
+  const r = ratings[key];
+  if (GUIDE[key]) {
+    const lbl = `${label}<button class="info-dot" data-ref="${key}" aria-expanded="${statRefKey === key}" aria-controls="stat-ref" aria-label="What's optimal for ${GUIDE[key][0].toLowerCase()}">i</button>`;
+    const val = `<span>${value}${unit && value !== "—" ? `<small>${unit}</small>` : ""}</span>` + (r ? `<span class="grade ${r}">${GRADE_WORD[r]}</span>` : "");
+    return `<div class="stat ${cls}${r ? " r-" + r : ""}"><dt>${lbl}</dt><dd class="smash-dd">${val}</dd></div>`;
+  }
+  return stat(r ? `<i class="rd" aria-hidden="true"></i>${label}` : label, value, unit, cls + (r ? " r-" + r : ""), r);
+}
+function renderStatRef(s) {
+  const box = document.getElementById("stat-ref");
+  box.hidden = !statRefKey;
+  if (!statRefKey) return;
+  const k = statRefKey, t = rangeText(k, s), r = ratings[k];
+  document.getElementById("stat-ref-title").textContent = `${GUIDE[k][0]} · ${s.club}`;
+  const cur = { launch: fmt(s.launch, 1) + "°", spin: fmt(s.spin), axis: lrDeg(s.axis), descent: fmt(s.traj?.descent, 0) + "°", hang: fmt(s.traj?.flightTime, 1) + " s", attack: io(s.attack) + "°", path: lrDeg(s.path),
+    apex: fmt(height(s.traj?.apex)) + " " + hUnit(), dir: lrDeg(s.dir), f2p: lrDeg(s.f2p) }[k];
+  document.getElementById("stat-ref-row").innerHTML = t
+    ? `<td>${r ? `<span class="${r === "good" ? "g" : r === "ok" ? "o" : "b"}">●</span> ` : ""}${cur.replace("—°", "—")}</td><td class="g">${t[0]}</td><td class="o">${t[1]}</td><td class="b">outside OK</td>`
+    : `<td colspan="4">No club-specific range for “${s.club}”.</td>`;
+  document.getElementById("stat-ref-text").textContent = GUIDE[k][1];
+}
+let rateRefOpen = false;
+const RATE_ROWS = [
+  ["carry", "Carry"], ["total", "Total"], ["offline", "Offline"], ["ballSpeed", "Ball speed"], ["clubSpeed", "Club speed"], ["smash", "Smash"],
+  ["apex", "Apex"], ["launch", "Launch"], ["dir", "Direction"], ["spin", "Spin"], ["axis", "Spin axis"], ["descent", "Descent"], ["hang", "Hang time"],
+  ["attack", "Attack"], ["path", "Club path"], ["face", "Face"], ["f2p", "Face to path"],
+];
+function rangeText(key, s) {
+  const d = clubDetail(s.club), f0 = (v, k = 0) => (+v).toFixed(k);
+  if (PERSONAL[key]) { const [g, a] = PERSONAL[key]; return [`±${g * 100}% of avg`, `±${a * 100}%`]; }
+  if (key === "offline") return ["≤5% of carry", "≤10%"];
+  if (key === "smash") { const b = SMASH_BANDS.find((x) => x.key === clubCategory(s.club)); return b ? [`${b.good.toFixed(2)}+`, `${b.ok.toFixed(2)}+`] : null; }
+  if (ABS[key]) { const [g, a] = ABS[key]; return [`within ${g}°`, `within ${a}°`]; }
+  const w = WINDOWS[key] && WINDOWS[key](d); if (!w) return null;
+  if (key === "apex") { const c = (y) => f0(height(y * YD)); return [`${c(w.lo)}–${c(w.hi)} ${hUnit()}`, `${c(w.alo)}–${c(w.ahi)}`]; }
+  if (key === "spin") return [`${f0(w.lo / 100) * 100}–${f0(w.hi / 100) * 100}`, `${f0(w.alo / 100) * 100}–${f0(w.ahi / 100) * 100}`];
+  if (key === "hang") return [`${f0(w.lo, 1)}–${f0(w.hi, 1)} s`, `${f0(w.alo, 1)}–${f0(w.ahi, 1)}`];
+  return [`${f0(w.lo)}° to ${f0(w.hi)}°`, `${f0(w.alo)}° to ${f0(w.ahi)}°`];
+}
+function renderRateRef(s) {
+  document.getElementById("rate-ref").hidden = !rateRefOpen;
+  document.getElementById("rate-btn").setAttribute("aria-expanded", String(rateRefOpen));
+  if (!rateRefOpen || !s) return;
+  const d = clubDetail(s.club);
+  document.getElementById("rate-title").textContent = "Rating guide · " + (d.cat ? s.club : s.club + " (club type not recognised)");
+  document.getElementById("rate-rows").innerHTML = RATE_ROWS.map(([k, label]) => {
+    const t = rangeText(k, s); if (!t) return "";
+    const r = ratings[k];
+    return `<tr class="${r ? "mine" : ""}"><td>${r ? `<span class="${r === "good" ? "g" : r === "ok" ? "o" : "b"}">●</span> ` : ""}${label}</td><td class="g">${t[0]}</td><td class="o">${t[1]}</td></tr>`;
+  }).join("");
+}
+document.getElementById("rate-btn").addEventListener("click", () => { rateRefOpen = !rateRefOpen; renderRateRef(view[cur]); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && rateRefOpen) { rateRefOpen = false; renderRateRef(view[cur]); } });
+function stat(label, value, unit, cls = "", rating) { return `<div class="stat ${cls}"${rating ? ` title="Rated ${rating === "ok" ? "amber" : rating === "good" ? "green" : "red"}"` : ""}><dt>${label}</dt><dd>${value}${unit && value !== "—" ? `<small>${unit}</small>` : ""}</dd></div>`; }
+function renderCard(s) {
+  const t = s.traj;
+  document.getElementById("c-club").textContent = s.club;
+  document.getElementById("c-club").style.color = clubColor[s.club];
+  document.getElementById("c-no").textContent = `Shot ${s.idx} of ${shots.length}` + (s.sample ? " · sample" : "");
+  document.getElementById("c-carry").innerHTML = `${fmt(dist(t.carry))}<small>${dUnit()}</small>`;
+  const sp = shapeParts(s), tag = document.getElementById("c-shape");
+  tag.textContent = shapeName(sp); tag.className = "shape " + shapeQuality(sp);
+  renderShapeRef(sp);
+  const total = Math.hypot(t.rollEnd.x, t.rollEnd.z);
+  ratings = rateShot(s, clubAverages(shots));
+  const cr = ratings.carry, lbl = document.querySelector(".hero .label");
+  lbl.innerHTML = "Carry" + (cr ? ` <span class="grade ${cr}">${cr === "good" ? "On average" : cr === "ok" ? "A bit off" : "Well off"}</span>` : "");
+  const html = [
+    rstat("total", "Total", fmt(dist(total)), dUnit(), t.est.total ? "est" : ""),
+    rstat("offline", "Offline", signed(dist(t.land.z)), dUnit()),
+    rstat("ballSpeed", "Ball speed", fmt(spd(s.ballSpeed)), sUnit()),
+    rstat("clubSpeed", "Club speed", fmt(spd(s.clubSpeed)), sUnit()),
+    smashStat(s),
+    rstat("apex", "Apex", fmt(height(t.apex)), hUnit(), t.est.apex ? "est" : ""),
+    `<div class="group-label more" style="grid-column:1/-1">Launch &amp; spin</div>`,
+    rstat("launch", "Launch", fmt(s.launch, 1), "°", "more"),
+    rstat("dir", "Direction", signed(s.dir), "°", "more"),
+    rstat("spin", "Spin", fmt(s.spin), "rpm", "more"),
+    rstat("axis", "Spin axis", signed(s.axis), "°", "more"),
+    rstat("descent", "Descent", fmt(t.descent, 0), "°", "more est"),
+    rstat("hang", "Hang time", fmt(t.flightTime, 1), "s", "more est"),
+    `<div class="group-label more" style="grid-column:1/-1">Club delivery</div>`,
+    rstat("attack", "Attack", io(s.attack), "°", "more"),
+    rstat("path", "Club path", io(s.path), "°", "more"),
+    rstat("face", "Face", io(s.face), "°", "more"),
+    rstat("f2p", "Face to path", io(s.f2p), "°", "more"),
+  ].join("");
+  document.getElementById("stats").innerHTML = html;
+  renderSmashRef(s); renderRateRef(s); renderStatRef(s); renderImpact(s); renderStatsPage(s);
+  document.getElementById("c-mini").innerHTML = `${fmt(dist(t.carry))}<small>${dUnit()}</small> · ${shapeName(sp)}`;
+}
+
+/* ---------- selection + animation ---------- */
+function select(i, launch) {
+  if (!view.length) { renderEmpty(filter === "All" ? currentClub : filter); return; }
+  cur = Math.max(0, Math.min(view.length - 1, i));
+  const s = view[cur];
+  document.querySelectorAll("#strip .chip").forEach((c, k) => c.setAttribute("aria-current", String(k === cur)));
+  const chip = document.querySelectorAll("#strip .chip")[cur]; if (chip) chip.scrollIntoView({ block: "nearest", inline: "center" });
+  renderCard(s); syncHistoryHighlight(s);
+  if (launch) hit(s);
+}
+
+function buildTracer(s) {
+  if (tracerMesh) { tracerGroup.remove(tracerMesh); tracerMesh.geometry.dispose(); }
+  const pts = s.traj.pts.filter((_, i) => i % 3 === 0).concat([s.traj.land]).map((q) => new THREE.Vector3(q.x, q.y, q.z));
+  const curve = new THREE.CatmullRomCurve3(pts);
+  tracerSegs = Math.min(400, pts.length * 2);
+  const geo = new THREE.TubeGeometry(curve, tracerSegs, 0.09, 6, false);
+  geo.setDrawRange(0, 0);
+  tracerMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: clubColor[s.club], transparent: true, opacity: 0.95, fog: false }));
+  tracerGroup.add(tracerMesh);
+}
+
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function hit(s) {
+  if (!orbitMode()) resetView(false);
+  buildTracer(s);
+  anim = { s, t0: performance.now(), done: false };
+  if (reduceMotion) anim.t0 -= (s.traj.flightTime + 3) * 1000;
+}
+
+function arcFrac(traj, t) {
+  const p = traj.pts, A = traj.arcs;
+  if (t <= 0) return 0; if (t >= traj.flightTime) return 1;
+  let lo = 0, hi = p.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p[m].t < t) lo = m; else hi = m; }
+  const u = (t - p[lo].t) / (p[hi].t - p[lo].t || 1);
+  return (A[lo] + (A[hi] - A[lo]) * u) / A[A.length - 1];
+}
+function posAt(traj, t) {
+  const p = traj.pts;
+  if (t <= 0) return new THREE.Vector3(0, 0.15, 0);
+  if (t >= traj.flightTime) return new THREE.Vector3(traj.land.x, 0, traj.land.z);
+  let lo = 0, hi = p.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p[m].t < t) lo = m; else hi = m; }
+  const a = p[lo], b = p[hi], u = (t - a.t) / (b.t - a.t || 1);
+  return new THREE.Vector3(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u);
+}
+
+const TEE_CAM = { back: 11, up: 3.8 }; // behind-the-ball view: a little higher than eye level
+const camPos = new THREE.Vector3(-TEE_CAM.back, TEE_CAM.up, 0), camLook = new THREE.Vector3(60, 3, 0);
+function frameIdle() {
+  const s = view[cur];
+  if (camMode === "top") return topFrame();
+  if (camMode === "free") return { pos: freeBase.pos, look: freeBase.look };
+  if (!s) return { pos: new THREE.Vector3(-TEE_CAM.back, TEE_CAM.up, 0), look: new THREE.Vector3(80, 3, 0) };
+  return { pos: new THREE.Vector3(-TEE_CAM.back, TEE_CAM.up, 0), look: new THREE.Vector3(Math.max(60, s.traj.carry * 0.55), 3, s.traj.land.z * 0.3) };
+}
+function topFrame() {
+  const far = Math.max(120, ...view.map((v) => v.traj.rollEnd.x));
+  return { pos: new THREE.Vector3(far * 0.42, far * 0.95, 0.01), look: new THREE.Vector3(far * 0.5, 0, 0) };
+}
+
+/* ---------- user camera control ---------- */
+const CAMS = ["broadcast", "chase", "tee", "top", "free"];
+const user = { yaw: 0, pitch: 0, zoom: 1, pan: new THREE.Vector3() };
+const freeBase = { pos: new THREE.Vector3(-8, 4, 0), look: new THREE.Vector3(60, 0, 0) };
+let lastInput = 0;
+function resetView(all) { user.yaw = 0; user.pitch = 0; user.pan.set(0, 0, 0); if (all) user.zoom = 1; }
+const orbitMode = () => camMode === "free" || camMode === "top";
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const BASE_FOV = () => (stage.clientWidth < 700 ? 64 : 52);
+
+function applyCamera(pos, look) {
+  const L = look.clone().add(user.pan);
+  const P = pos.clone().add(user.pan);
+  let fov = BASE_FOV();
+  if (orbitMode()) {
+    const sph = new THREE.Spherical().setFromVector3(P.clone().sub(L));
+    sph.theta += user.yaw;
+    sph.phi = clamp(sph.phi - user.pitch, 0.06, 1.5);
+    sph.radius = clamp(sph.radius / user.zoom, 2, 900);
+    P.copy(L).add(new THREE.Vector3().setFromSpherical(sph));
+  } else {
+    // broadcast / chase: camera stays put and swivels, scroll zooms the lens
+    const sph = new THREE.Spherical().setFromVector3(L.clone().sub(P));
+    sph.theta += user.yaw;
+    sph.phi = clamp(sph.phi - user.pitch, 0.15, 2.6);
+    L.copy(P).add(new THREE.Vector3().setFromSpherical(sph));
+    fov = clamp(BASE_FOV() / user.zoom, 8, 85);
+  }
+  if (P.y < 0.4) P.y = 0.4;
+  if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  camera.position.copy(P); camera.lookAt(L);
+}
+
+{
+  const el = renderer.domElement, ptrs = new Map();
+  let pinch0 = 0, zoom0 = 1, mid0 = null;
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+  el.addEventListener("pointerdown", (e) => { el.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, btn: e.button, shift: e.shiftKey }); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = user.zoom; mid0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } });
+  const end = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) mid0 = null; };
+  el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
+  function panBy(dx, dy) {
+    const fwd = camera.getWorldDirection(new THREE.Vector3()); fwd.y = 0; fwd.normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
+    const k = Math.max(0.05, camera.position.distanceTo(camLook.clone().add(user.pan)) * 0.0016) * (orbitMode() ? 1 : 0.4);
+    user.pan.addScaledVector(right, -dx * k).addScaledVector(fwd, dy * k);
+  }
+  el.addEventListener("pointermove", (e) => {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    lastInput = performance.now();
+    if (ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0) user.zoom = clamp(zoom0 * (d / pinch0), 0.3, 8);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; if (mid0) panBy(mid.x - mid0.x, mid.y - mid0.y); mid0 = mid;
+      return;
+    }
+    if (p.btn === 2 || p.btn === 1 || p.shift) panBy(dx, dy);
+    else { user.yaw -= dx * 0.005; user.pitch += dy * 0.004 * (orbitMode() ? 1 : -1); }
+  });
+  el.addEventListener("wheel", (e) => { e.preventDefault(); lastInput = performance.now(); user.zoom = clamp(user.zoom * Math.exp(-e.deltaY * 0.0012), 0.3, 8); }, { passive: false });
+  el.addEventListener("dblclick", () => resetView(true));
+}
+
+const ROLL_TIME = 1.6;
+const RESET_AFTER = 1800; // ms after the ball stops before it goes back on the tee
+function tick(now) {
+  requestAnimationFrame(tick);
+  let target = frameIdle(), lerp = 0.06;
+  if (anim) {
+    const s = anim.s, tr = s.traj;
+    const t = (now - anim.t0) / 1000;
+    let p;
+    if (t <= tr.flightTime) {
+      p = posAt(tr, t);
+      const frac = t / tr.flightTime;
+      tracerMesh.geometry.setDrawRange(0, Math.floor(tracerSegs * arcFrac(tr, t)) * 6 * 6);
+      if (camMode === "chase") { target = { pos: p.clone().add(new THREE.Vector3(-14, 4 + p.y * 0.15, 0)), look: p.clone().add(new THREE.Vector3(20, -p.y * 0.2, 0)) }; lerp = 0.12; }
+      else if (camMode === "broadcast") {
+        if (frac < 0.45) { target = { pos: new THREE.Vector3(-TEE_CAM.back, TEE_CAM.up + p.y * 0.25, p.z * 0.2), look: p }; lerp = 0.2; }
+        else { const L = tr.land; target = { pos: new THREE.Vector3(L.x + 14, 5, L.z + 22), look: p }; lerp = frac < 0.5 ? 1 : 0.15; }
+      } else if (camMode === "free" || camMode === "tee") target = frameIdle();
+      else target = topFrame();
+    } else {
+      tracerMesh.geometry.setDrawRange(0, Infinity);
+      const u = Math.min(1, (t - tr.flightTime) / ROLL_TIME), e = 1 - (1 - u) * (1 - u);
+      const L = tr.land, R = tr.rollEnd;
+      const bounce = Math.abs(Math.sin(u * Math.PI * 2.2)) * (1 - u) * Math.min(1.2, tr.carry / 160);
+      p = new THREE.Vector3(L.x + (R.x - L.x) * e, bounce, L.z + (R.z - L.z) * e);
+      if (camMode === "top" || camMode === "free" || camMode === "tee") target = frameIdle();
+      else if (camMode === "broadcast") target = { pos: new THREE.Vector3(L.x + 14, 5, L.z + 22), look: p };
+      else target = { pos: p.clone().add(new THREE.Vector3(-14, 5, 0)), look: p.clone().add(new THREE.Vector3(10, 0, 0)) };
+      lerp = 0.08;
+      if (u >= 1 && !anim.done) {
+        anim.done = true; anim.doneAt = now;
+      }
+      if (anim.done && playAll && now - anim.doneAt > 900) {
+        if (cur < view.length - 1) select(cur + 1, true); else { playAll = false; syncPlayAll(); }
+      } else if (anim.done && !playAll && now - anim.doneAt > RESET_AFTER) {
+        anim = null; // back on the tee, tracer stays drawn
+        if (!orbitMode()) resetView(true);
+        if (camMode !== "free" && camMode !== "top") lerp = 0.06;
+      }
+    }
+    ball.position.copy(p).add(new THREE.Vector3(0, 0.14, 0));
+    shadow.position.set(p.x, 0.07, p.z);
+    shadow.material.opacity = 0.35 * Math.max(0.15, 1 - p.y / 30);
+  } else {
+    ball.position.set(0, 0.2, 0); shadow.position.set(0, 0.07, 0);
+  }
+  camPos.lerp(target.pos, lerp); camLook.lerp(target.look, lerp);
+  applyCamera(camPos, camLook);
+  if (!statsMode) renderer.render(scene, camera);
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+
+/* ---------- controls ---------- */
+function toast(msg, err) {
+  const t = document.getElementById("toast"); t.textContent = msg; t.classList.toggle("err", !!err); t.hidden = false;
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), err ? 7000 : 3500);
+}
+function syncPlayAll() { document.getElementById("playall").setAttribute("aria-pressed", String(playAll)); }
+document.getElementById("replay").onclick = () => select(cur, true);
+document.getElementById("prev").onclick = () => select(cur - 1, true);
+document.getElementById("next").onclick = () => select(cur + 1, true);
+document.getElementById("playall").onclick = () => { playAll = !playAll; syncPlayAll(); if (playAll) select(0, true); };
+document.getElementById("more").onclick = (e) => { const c = document.getElementById("card"); c.classList.toggle("expanded"); e.target.textContent = c.classList.contains("expanded") ? "Fewer numbers" : "More numbers"; };
+function setCam(m) {
+  camMode = m; try { localStorage.setItem("r10-cam", m); } catch (e) {}
+  CAMS.forEach((k) => document.getElementById("cam-" + k).setAttribute("aria-pressed", String(k === m)));
+  document.getElementById("cam-label").textContent = { broadcast: "TV cam", chase: "Chase", tee: "Tee", top: "Top", free: "Free" }[m];
+  if (m === "free" && camera.position.lengthSq() > 0) { freeBase.pos.copy(camera.position); freeBase.look.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(40)); camPos.copy(freeBase.pos); camLook.copy(freeBase.look); }
+  resetView(true);
+}
+/* dropdowns that open upwards */
+function ddOpen(id, open) {
+  const dd = document.getElementById(id), btn = dd.querySelector(".dd-btn"), menu = dd.querySelector(".dd-menu");
+  menu.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+}
+document.querySelectorAll(".dd").forEach((dd) => dd.querySelector(".dd-btn").addEventListener("click", () => ddOpen(dd.id, dd.querySelector(".dd-menu").hidden)));
+document.addEventListener("pointerdown", (e) => document.querySelectorAll(".dd").forEach((dd) => { if (!dd.contains(e.target)) ddOpen(dd.id, false); }));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".dd").forEach((dd) => ddOpen(dd.id, false)); });
+const CAM_NAMES = { broadcast: "TV cam", chase: "Chase", tee: "Tee", top: "Top", free: "Free" };
+CAMS.forEach((k) => (document.getElementById("cam-" + k).onclick = () => { setCam(k); ddOpen("cam-dd", false); }));
+function setUnits(u) {
+  units = u; try { localStorage.setItem("r10-units", u); } catch (e) {}
+  document.getElementById("u-yd").setAttribute("aria-pressed", String(u === "yd"));
+  document.getElementById("u-m").setAttribute("aria-pressed", String(u === "m"));
+  document.getElementById("units-label").textContent = u; ddOpen("units-dd", false);
+  buildMarkers(); renderFilters(); renderStrip(); select(cur, false);
+}
+document.getElementById("u-yd").onclick = () => setUnits("yd");
+document.getElementById("u-m").onclick = () => setUnits("m");
+window.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input")) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); select(cur + 1, true); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); select(cur - 1, true); }
+  else if (e.key === " " && !(e.target.tagName === "BUTTON")) { e.preventDefault(); select(cur, true); }
+});
+
+function readFile(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try { const list = loadGarminCSV(String(r.result)); setShots(list, file.name, false); toast(`Loaded ${list.length} shots from ${file.name}`); }
+    catch (err) { toast(err.message, true); }
+  };
+  r.onerror = () => toast("That file couldn't be read. Try exporting it again.", true);
+  r.readAsText(file);
+}
+document.getElementById("file").addEventListener("change", (e) => { readFile(e.target.files[0]); e.target.value = ""; });
+const drop = document.getElementById("drop");
+let dragDepth = 0;
+let dropTimer = 0;
+const hideDrop = () => { dragDepth = 0; drop.hidden = true; clearTimeout(dropTimer); };
+const isFileDrag = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
+window.addEventListener("dragenter", (e) => { if (!isFileDrag(e)) return; e.preventDefault(); dragDepth++; drop.hidden = false; clearTimeout(dropTimer); dropTimer = setTimeout(hideDrop, 6000); });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) hideDrop(); });
+window.addEventListener("dragover", (e) => { if (!isFileDrag(e)) return; e.preventDefault(); clearTimeout(dropTimer); dropTimer = setTimeout(hideDrop, 6000); });
+window.addEventListener("dragend", hideDrop);
+window.addEventListener("drop", (e) => { e.preventDefault(); hideDrop(); if (e.dataTransfer && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+document.getElementById("drop-x").addEventListener("click", hideDrop);
+drop.addEventListener("click", (e) => { if (e.target === drop) hideDrop(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideDrop(); });
+
+/* ---------- view mode (visual / stats) ---------- */
+document.getElementById("mode-visual").addEventListener("click", () => setMode(false));
+document.getElementById("mode-stats").addEventListener("click", () => setMode(true));
+window.addEventListener("hashchange", () => { if (location.hash === "#stats") setMode(true); else if (location.hash === "#visual") setMode(false); });
+
+{
+  const box = document.getElementById("sp-impact"), btn = document.getElementById("sp-impact-toggle");
+  const set = (c) => { box.classList.toggle("collapsed", c); btn.setAttribute("aria-expanded", String(!c)); try { localStorage.setItem("r10-sp-impact", c ? "0" : "1"); } catch (e) {} };
+  let c = false; try { c = localStorage.getItem("r10-sp-impact") === "0"; } catch (e) {}
+  set(c);
+  btn.addEventListener("click", () => set(!box.classList.contains("collapsed")));
+}
+
+/* ---------- club picker + live session ---------- */
+function liveName() { const t = liveShots[0]?.time; return "Live session" + (t ? " · " + new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : ""); }
+function saveLive() { try { localStorage.setItem(LIVE_KEY, JSON.stringify(liveShots)); } catch (e) {} }
+// every shot from the R10 comes through here and is filed under the club picked at the time
+function addShot(raw) {
+  if (!isLive) liveShots = [];
+  liveShots.push({ ...raw, club: currentClub, time: Date.now(), date: new Date().toLocaleString() });
+  saveLive();
+  setShots(liveShots, liveName(), false, { live: true, filter: currentClub });
+}
+window.r10AddShot = addShot;
+
+function renderEmpty(club) {
+  ratings = {}; document.getElementById("stat-ref").hidden = true;
+  if (tracerMesh) { tracerGroup.remove(tracerMesh); tracerMesh = null; }
+  anim = null;
+  const cc = document.getElementById("c-club"); cc.textContent = club; cc.style.color = clubColor[club] || "var(--ink)";
+  document.getElementById("c-no").textContent = "No shots yet";
+  document.getElementById("c-carry").innerHTML = "—";
+  document.querySelector(".hero .label").textContent = "Carry";
+  const tag = document.getElementById("c-shape"); tag.textContent = "—"; tag.className = "shape";
+  document.getElementById("c-mini").textContent = "No shots yet";
+  document.getElementById("stats").innerHTML = `<p class="empty-note">No shots with the ${club} yet. Hit one and it's saved under this club.</p>`;
+  renderImpact({ club }); renderStatsPage({ club });
+}
+
+{
+  const btn = document.getElementById("club-btn"), menu = document.getElementById("club-menu"), groups = document.getElementById("club-groups");
+  function drawMenu() {
+    const counts = {}; for (const s of shots) counts[s.club] = (counts[s.club] || 0) + 1;
+    groups.innerHTML = BAG.map(([g, list]) => `<div class="cg"><span>${g}</span><div>` + list.map((c) =>
+      `<button data-club="${c}" aria-pressed="${c === currentClub}" title="${c}${counts[c] ? ` · ${counts[c]} shots` : ""}">${shortClub(c)}${counts[c] ? `<span class="n">${counts[c]}</span>` : ""}</button>`).join("") + `</div></div>`).join("");
+  }
+  function open(o) { menu.hidden = !o; btn.setAttribute("aria-expanded", String(o)); if (o) drawMenu(); }
+  function pick(club) {
+    currentClub = club; try { localStorage.setItem("r10-club", club); } catch (e) {}
+    btn.textContent = shortClub(club); btn.title = club + " · tap to change";
+    filter = club; renderFilters(); applyFilter(); select(view.length - 1, false);
+    drawMenu();
+  }
+  btn.textContent = shortClub(currentClub); btn.title = currentClub + " · tap to change";
+  btn.addEventListener("click", () => open(menu.hidden));
+  groups.addEventListener("click", (e) => { const b = e.target.closest("button[data-club]"); if (b) { pick(b.dataset.club); open(false); } });
+  document.getElementById("sim-shot").addEventListener("click", () => { addShot(genShot(currentClub)); open(false); });
+  document.getElementById("new-session").addEventListener("click", () => {
+    liveShots = []; saveLive(); setShots([], "Live session", false, { live: true, filter: currentClub }); open(false); toast("Started a new session");
+  });
+  document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !e.target.closest(".clubpick")) open(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) open(false); });
+}
+
+/* ---------- live R10 over Bluetooth ---------- */
+{
+  const $ = (id) => document.getElementById(id);
+  const lines = [];
+  const log = (m) => { lines.push(`${new Date().toTimeString().slice(0, 8)}  ${m}`); if (lines.length > 400) lines.shift(); $("live-log").textContent = lines.join("\n"); $("live-log").scrollTop = 1e9; };
+  let link = null, phase = "off", r10 = null, battery = null, err = null, wakeLock = null;
+  const STATE_TEXT = { 0: ["Asleep, waking it…", "busy"], 1: ["Checking interference, keep still", "busy"], 2: ["Ready, hit a ball", "ok"], 3: ["Recording…", "ok"], 4: ["Reading the shot…", "busy"], 5: ["R10 error", "bad"] };
+  function render() {
+    let text = "Not connected", cls = "";
+    if (phase === "picking" || phase === "connecting") { text = "Connecting…"; cls = "busy"; }
+    else if (phase === "reconnecting") { text = "Reconnecting…"; cls = "busy"; }
+    else if (phase === "live") [text, cls] = STATE_TEXT[r10] || ["Connected", "ok"];
+    if (phase === "off" && err) cls = "bad";
+    for (const id of ["live-dot", "live-dot2"]) $(id).className = "live-dot " + cls;
+    $("live-status").textContent = text;
+    $("live-label").textContent = phase === "live" ? (r10 === 2 || r10 === 3 ? "Live" : "R10") : phase === "off" ? "R10" : "…";
+    $("live-batt").textContent = battery != null && phase !== "off" ? `Battery ${battery}%` : "";
+    $("live-err").hidden = !err; $("live-err").textContent = err || "";
+    $("live-connect").hidden = phase !== "off";
+    $("live-disconnect").hidden = phase === "off";
+    $("live-steps").hidden = phase !== "off";
+  }
+  async function keepAwake(on) {
+    try {
+      if (on && navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => (wakeLock = null)); }
+      if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && phase !== "off") keepAwake(true); });
+  const onState = (s) => {
+    if (s.phase) phase = s.phase;
+    if (s.r10 != null) r10 = s.r10;
+    if (s.battery != null) battery = s.battery;
+    if ("error" in s) err = s.error || null; else if (s.phase === "live") err = null;
+    if (phase === "off") keepAwake(false);
+    render();
+  };
+  const onShot = (shot) => { addShot(shot); };
+  $("live-connect").addEventListener("click", async () => {
+    if (!R10.Link.supported()) { $("live-nobt").hidden = false; $("live-url").textContent = location.href.split("#")[0]; log("Web Bluetooth not available in this browser"); return; }
+    err = null; link = new R10.Link({ log, onState, onShot });
+    try { await link.connect(); keepAwake(true); }
+    catch (e) {
+      const msg = e && e.name === "NotFoundError" ? "No R10 picked. Make sure it's on and Garmin Golf is closed, then try again." : (e && e.message) || String(e);
+      log("Connect failed: " + ((e && e.name) || "") + " " + ((e && e.message) || e));
+      try { link.disconnect(); } catch (x) {}
+      onState({ phase: "off", error: msg });
+    }
+  });
+  $("live-disconnect").addEventListener("click", () => { link && link.disconnect(); log("Disconnected"); });
+  const copy = (text, el) => { if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast("Copied"), () => selectText(el)); else selectText(el); };
+  const selectText = (el) => { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected. Use Copy from the menu"); };
+  $("live-copylog").addEventListener("click", () => copy(lines.join("\n"), $("live-log")));
+  $("live-copyurl").addEventListener("click", () => copy($("live-url").textContent, $("live-url")));
+  if (!R10.Link.supported()) { $("live-nobt").hidden = false; $("live-url").textContent = location.href.split("#")[0]; }
+  render();
+}
+
+/* ---------- collapsible panels ---------- */
+{
+  const card = document.getElementById("card"), cbtn = document.getElementById("card-toggle");
+  const imp = document.getElementById("impact"), ibtn = document.getElementById("impact-toggle");
+  const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  function setCard(c) { card.classList.toggle("collapsed", c); cbtn.setAttribute("aria-expanded", String(!c)); cbtn.setAttribute("aria-label", c ? "Expand stats" : "Collapse stats"); cbtn.title = c ? "Expand stats" : "Collapse stats"; store("r10-card-open", c ? "0" : "1"); }
+  function setImp(c) { imp.classList.toggle("collapsed", c); ibtn.setAttribute("aria-expanded", String(!c)); store("r10-impact-open", c ? "0" : "1"); if (typeof checkDock === "function") checkDock(); }
+  const narrow = window.matchMedia("(max-width: 760px)").matches;
+  setCard(read("r10-card-open") === "0");
+  setImp(read("r10-impact-open") ? read("r10-impact-open") === "0" : narrow);
+  cbtn.addEventListener("click", () => setCard(!card.classList.contains("collapsed")));
+  ibtn.addEventListener("click", () => setImp(!imp.classList.contains("collapsed")));
+}
+
+/* ---------- collapsible shot strip ---------- */
+{
+  const btn = document.getElementById("toggle-shots"), bottom = document.querySelector(".bottom");
+  function setCollapsed(c) {
+    bottom.classList.toggle("collapsed", c);
+    btn.setAttribute("aria-expanded", String(!c));
+    btn.querySelector("span").textContent = c ? "Show shots" : "Hide shots";
+    try { localStorage.setItem("r10-strip", c ? "0" : "1"); } catch (e) {}
+    if (!c) { const chip = document.querySelectorAll("#strip .chip")[cur]; if (chip) chip.scrollIntoView({ block: "nearest", inline: "center" }); }
+  }
+  let start = false; try { start = localStorage.getItem("r10-strip") === "0"; } catch (e) {}
+  setCollapsed(start);
+  btn.addEventListener("click", () => setCollapsed(!bottom.classList.contains("collapsed")));
+}
+
+/* ---------- auto layout: dock Impact along the bottom when the side panels would touch ---------- */
+var layoutPref = "auto"; // var: checkDock can run before this line during start-up
+try { const l = localStorage.getItem("r10-layout"); if (["auto", "side", "stacked"].includes(l)) layoutPref = l; } catch (e) {}
+function checkDock() {
+  const hudEl = document.querySelector(".hud");
+  const imp = document.getElementById("impact"), card = document.getElementById("card");
+  const narrow = window.matchMedia("(max-width: 760px)").matches;
+  let dock = false;
+  card.style.maxWidth = ""; imp.style.maxWidth = "";
+  // the layout depends only on the widths you set (or your Layout choice), so minimising a panel never flips it
+  if (!narrow && !statsMode) {
+    const cs = getComputedStyle(hudEl);
+    const avail = hudEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const impW = parseFloat(imp.style.getPropertyValue("--imp-w")) || 300;
+    const cardW = parseFloat(card.style.getPropertyValue("--card-w")) || 300;
+    const touching = impW + cardW + 24 > avail; // 24px breathing room between them
+    if (layoutPref === "stacked") dock = true;
+    else if (layoutPref === "side") {
+      // keep them side by side: squeeze the wider panel so they don't overlap
+      if (touching) {
+        const room = Math.max(260, avail - 24 - Math.min(impW, cardW));
+        if (cardW >= impW) card.style.maxWidth = room + "px"; else imp.style.maxWidth = room + "px";
+      }
+    } else dock = touching;
+  }
+  if (hudEl.classList.contains("docked") !== dock) { hudEl.classList.toggle("docked", dock); setTimeout(resize, 0); }
+}
+function setLayout(l) {
+  layoutPref = l; try { localStorage.setItem("r10-layout", l); } catch (e) {}
+  document.querySelectorAll("#layout-menu [data-layout]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.layout === l)));
+  document.getElementById("layout-label").textContent = { auto: "Auto", side: "Side by side", stacked: "Stacked" }[l];
+  document.getElementById("layout-icon").innerHTML = l === "stacked"
+    ? '<rect x="2" y="1.5" width="12" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="10.5" width="12" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+    : '<rect x="1.5" y="2" width="4" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="10.5" y="2" width="4" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>';
+  ddOpen("layout-dd", false);
+  checkDock();
+}
+document.getElementById("layout-menu").addEventListener("click", (e) => { const b = e.target.closest("[data-layout]"); if (b) setLayout(b.dataset.layout); });
+setLayout(layoutPref);
+if (window.ResizeObserver) new ResizeObserver(() => checkDock()).observe(document.getElementById("card"));
+window.addEventListener("resize", checkDock);
+
+/* ---------- docked layout: drag the stats panel's bottom edge and the Impact strip's top edge ---------- */
+for (const [gripId, panelId, prop, key, dir] of [["card-vgrip", "card", "--dock-card-h", "r10-dock-card-h", 1], ["impact-vgrip", "impact", "--dock-imp-h", "r10-dock-imp-h", -1]]) {
+  const grip = document.getElementById(gripId), panel = document.getElementById(panelId);
+  // the smallest height that still shows every stat without scrolling
+  const naturalH = () => {
+    const s = panel.style, h = s.height, m = s.maxHeight;
+    s.height = "auto"; s.maxHeight = "none";
+    const v = panel.getBoundingClientRect().height;
+    s.height = h; s.maxHeight = m;
+    return Math.ceil(v);
+  };
+  const setH = (h, minH = 60) => { const top = window.innerHeight * 0.75; h = clamp(h, Math.min(minH, top), top); panel.style.setProperty(prop, h + "px"); return h; };
+  const save = () => { try { localStorage.setItem(key, Math.round(panel.getBoundingClientRect().height)); } catch (e) {} };
+  try { const h = +localStorage.getItem(key); if (h) { setH(h); setTimeout(() => { if (document.querySelector(".hud.docked")) setH(panel.getBoundingClientRect().height, naturalH()); }, 600); } } catch (e) {}
+  let st = null;
+  grip.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); grip.setPointerCapture(e.pointerId); grip.classList.add("dragging"); st = { y: e.clientY, h: panel.getBoundingClientRect().height, min: naturalH() }; });
+  grip.addEventListener("pointermove", (e) => { if (st) setH(st.h + dir * (e.clientY - st.y), st.min); });
+  const done = () => { if (!st) return; st = null; grip.classList.remove("dragging"); save(); setTimeout(resize, 0); };
+  grip.addEventListener("pointerup", done); grip.addEventListener("pointercancel", done);
+  grip.addEventListener("dblclick", () => { panel.style.removeProperty(prop); try { localStorage.removeItem(key); } catch (e) {} });
+  grip.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault(); e.stopPropagation();
+    const step = (e.shiftKey ? 80 : 24) * (e.key === "ArrowDown" ? 1 : -1) * dir;
+    setH(panel.getBoundingClientRect().height + step, naturalH()); save();
+  });
+}
+
+/* ---------- resizable impact panel ---------- */
+{
+  const panel = document.getElementById("impact"), grip = document.getElementById("impact-grip"), KEY = "r10-impact-w";
+  const lim = () => [260, Math.max(300, Math.min(window.innerWidth * 0.75, 980))];
+  const setW = (w) => { const [a, b] = lim(); w = clamp(w, a, b); panel.style.setProperty("--imp-w", w + "px"); checkDock(); return w; };
+  const save = () => { try { localStorage.setItem(KEY, Math.round(panel.getBoundingClientRect().width)); } catch (e) {} };
+  try { const w = +localStorage.getItem(KEY); if (w) setW(w); } catch (e) {}
+  let st = null;
+  grip.addEventListener("pointerdown", (e) => { e.preventDefault(); grip.setPointerCapture(e.pointerId); panel.classList.add("resizing"); st = { x: e.clientX, w: panel.getBoundingClientRect().width }; });
+  grip.addEventListener("pointermove", (e) => { if (st) setW(st.w + (e.clientX - st.x)); }); // drag right to widen
+  const done = () => { if (!st) return; st = null; panel.classList.remove("resizing"); save(); };
+  grip.addEventListener("pointerup", done); grip.addEventListener("pointercancel", done);
+  grip.addEventListener("dblclick", () => { panel.style.removeProperty("--imp-w"); try { localStorage.removeItem(KEY); } catch (e) {} });
+  grip.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault(); e.stopPropagation();
+    setW(panel.getBoundingClientRect().width + (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 80 : 24)); save();
+  });
+  window.addEventListener("resize", () => { const w = parseFloat(panel.style.getPropertyValue("--imp-w")); if (w) setW(w); });
+}
+
+/* ---------- resizable stats panel ---------- */
+{
+  const card = document.getElementById("card"), grip = document.getElementById("grip");
+  const stacked = () => window.matchMedia("(max-width: 760px)").matches;
+  const KEY_W = "r10-card-w", KEY_H = "r10-card-h";
+  const limitsW = () => [260, Math.max(300, Math.min(window.innerWidth * 0.75, 980))];
+  const limitsH = () => [120, window.innerHeight * 0.8];
+  function setW(w) { const [a, b] = limitsW(); w = clamp(w, a, b); card.style.setProperty("--card-w", w + "px"); checkDock(); return w; }
+  function setH(h) { const [a, b] = limitsH(); h = clamp(h, a, b); card.style.setProperty("--card-h", h + "px"); return h; }
+  try { const w = +localStorage.getItem(KEY_W); if (w) setW(w); const h = +localStorage.getItem(KEY_H); if (h) setH(h); } catch (e) {}
+  let start = null;
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); grip.setPointerCapture(e.pointerId); card.classList.add("resizing");
+    const r = card.getBoundingClientRect();
+    start = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    if (stacked()) setH(start.h - (e.clientY - start.y)); // drag up to make it taller
+    else setW(start.w - (e.clientX - start.x)); // drag left to make it wider
+  });
+  const done = () => {
+    if (!start) return; start = null; card.classList.remove("resizing");
+    try { const r = card.getBoundingClientRect(); if (stacked()) localStorage.setItem(KEY_H, Math.round(r.height)); else localStorage.setItem(KEY_W, Math.round(r.width)); } catch (e) {}
+  };
+  grip.addEventListener("pointerup", done); grip.addEventListener("pointercancel", done);
+  grip.addEventListener("dblclick", () => {
+    if (stacked()) { card.style.removeProperty("--card-h"); try { localStorage.removeItem(KEY_H); } catch (e) {} }
+    else { card.style.removeProperty("--card-w"); try { localStorage.removeItem(KEY_W); } catch (e) {} }
+  });
+  grip.addEventListener("keydown", (e) => {
+    const r = card.getBoundingClientRect(), step = e.shiftKey ? 80 : 24;
+    if (!stacked() && (e.key === "ArrowLeft" || e.key === "ArrowRight")) { e.preventDefault(); e.stopPropagation(); const w = setW(r.width + (e.key === "ArrowLeft" ? step : -step)); try { localStorage.setItem(KEY_W, Math.round(w)); } catch (er) {} }
+    if (stacked() && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); const h = setH(r.height + (e.key === "ArrowUp" ? step : -step)); try { localStorage.setItem(KEY_H, Math.round(h)); } catch (er) {} }
+  });
+  window.addEventListener("resize", () => { const w = parseFloat(card.style.getPropertyValue("--card-w")); if (w) setW(w); });
+}
+
+/* ---------- boot ---------- */
+resize(); setCam(camMode);
+document.getElementById("u-yd").setAttribute("aria-pressed", String(units === "yd"));
+document.getElementById("u-m").setAttribute("aria-pressed", String(units === "m"));
+document.getElementById("units-label").textContent = units;
+buildMarkers();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => buildMarkers());
+{
+  let saved = []; try { saved = JSON.parse(localStorage.getItem(LIVE_KEY) || "[]"); } catch (e) {}
+  if (Array.isArray(saved) && saved.length) { liveShots = saved; setShots(liveShots, liveName(), false, { live: true }); }
+  else setShots(makeSample(), "Sample session — load your CSV", true);
+}
+// an upright tablet always shows the numbers page; turning it back sideways restores your choice
+const PORTRAIT_TABLET = window.matchMedia("(pointer: coarse) and (orientation: portrait) and (min-width: 700px)");
+function applyOrientation() {
+  const pt = PORTRAIT_TABLET.matches;
+  document.body.classList.toggle("portrait-tablet", pt);
+  setMode(pt ? true : userWantsStats, false);
+}
+{
+  let m = location.hash === "#stats" ? "stats" : location.hash === "#visual" ? "visual" : null;
+  if (!m) { try { m = localStorage.getItem("r10-mode"); } catch (e) {} }
+  userWantsStats = m === "stats";
+  applyOrientation();
+  if (PORTRAIT_TABLET.addEventListener) PORTRAIT_TABLET.addEventListener("change", applyOrientation);
+}
+requestAnimationFrame(tick);
+</script>
+
+</body>
+</html>
